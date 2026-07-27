@@ -1,0 +1,38 @@
+{
+  "name": "squad-digital-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "next": "16.2.12",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "zustand": "5.0.2",
+    "react-hook-form": "7.54.2",
+    "zod": "3.24.1",
+    "@hookform/resolvers": "3.9.1"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "@types/node": "22.10.5",
+    "@types/react": "19.0.4",
+    "@types/react-dom": "19.0.2",
+    "tailwindcss": "4.3.3",
+    "@tailwindcss/postcss": "4.3.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.12"
+  },
+  "overrides": {
+    "postcss": "8.5.23",
+    "sharp": "0.35.3",
+    "minimatch": "10.2.1",
+    "brace-expansion": "2.0.2",
+    "@eslint/config-array": "0.23.1",
+    "@eslint/eslintrc": "3.3.6"
+  }
+}
