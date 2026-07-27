@@ -1,0 +1,29 @@
+{
+    "permissions": {
+      "allow": [
+        "Bash(pytest:*)",
+        "Bash(ruff:*)",
+        "Bash(black:*)",
+        "Bash(alembic:*)",
+        "Bash(docker compose:*)",
+        "Bash(pip install:*)",
+        "Bash(npm install:*)",
+        "Bash(npm run:*)",
+        "Read(**)",
+        "Write(backend/**)",
+        "Write(orchestrator/**)",
+        "Write(frontend/src/**)",
+        "Write(prompts/**)",
+        "Write(infra/**)",
+        "Write(docs/**)"
+      ],
+      "deny": [
+        "Bash(curl:*)",
+        "Bash(wget:*)",
+        "Bash(git push:*)",
+        "Write(.env)",
+        "Write(**/*.pem)",
+        "Write(**/*.key)"
+      ]
+    }
+}
