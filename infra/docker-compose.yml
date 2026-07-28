@@ -14,10 +14,15 @@ services:
     image: pgvector/pgvector:0.8.5-pg16-trixie
     restart: unless-stopped
     environment:
+      # Superusuário de bootstrap (initdb) — interno ao container, nunca usado
+      # pela aplicação. init-app-role.sh cria o usuário real (DB_USER) sem
+      # SUPERUSER, dono do banco, na primeira inicialização do volume.
       POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      # Consumidas apenas pelo init-n8n-db.sh na primeira inicialização do volume
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      # Consumidas apenas pelos scripts de init em infra/postgres/
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       N8N_DB_NAME: ${N8N_DB_NAME}
       N8N_DB_USER: ${N8N_DB_USER}
       N8N_DB_PASSWORD: ${N8N_DB_PASSWORD}
@@ -25,9 +30,9 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init-n8n-db.sh:/docker-entrypoint-initdb.d/init-n8n-db.sh:ro
+      - ./postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,6 +97,8 @@ services:
       - "8000:8000"
     volumes:
       - ../backend/app:/app/app
+      - ../backend/alembic:/app/alembic
+      - ../backend/alembic.ini:/app/alembic.ini
     depends_on:
       postgres:
         condition: service_healthy

@@ -31,6 +31,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+extend-exclude = ["build", "*.egg-info"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

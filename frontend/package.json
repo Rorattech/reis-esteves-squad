@@ -29,10 +29,6 @@
   },
   "overrides": {
     "postcss": "8.5.23",
-    "sharp": "0.35.3",
-    "minimatch": "10.2.1",
-    "brace-expansion": "2.0.2",
-    "@eslint/config-array": "0.23.1",
-    "@eslint/eslintrc": "3.3.6"
+    "sharp": "0.35.3"
   }
 }
