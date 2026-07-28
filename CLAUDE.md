@@ -267,38 +267,65 @@ def create_audit_entry(
 
 ## 11. Prompts — padrões obrigatórios
 
-- Prompts ficam em prompts/<modulo>/<agente>.md — NUNCA inline no código Python
-- Carregue prompts em runtime com função utilitária em core/prompts.py
-- Todo arquivo de prompt deve seguir esta estrutura:
+- Prompts ficam em `prompts/<squad>/<modulo>/<agente>.md` — NUNCA inline no código Python
+- Prompts compartilhados entre todos os squads ficam em `prompts/_shared/` (ex: `_base.md`, `output_format.md`) e são carregados antes de qualquer prompt de squad
+- Cada squad possui um `prompts/<squad>/_squad.md` (module: `all`, agent: `squad_context`) com o contexto, premissas e regras específicas daquele squad — carregado antes dos módulos do squad
+- Carregue prompts em runtime com função utilitária em `core/prompts.py`
+- Atualmente existe apenas o squad `digital`; novos squads DEVEM seguir exatamente esta mesma estrutura de pastas e cabeçalho
 
+### Cabeçalho obrigatório (front matter)
+
+Todo arquivo de prompt (exceto `_base.md`) deve iniciar com este front matter YAML:
+
+```yaml
+---
+version: 1.0.0
+squad: <nome-do-squad>       # ex: digital | shared (para prompts em _shared/) | all (para o _squad.md)
+module: <nome-do-modulo>     # intake | evidence | research | strategy | drafting | review | all
+agent: <nome-do-agente>      # ex: triage, coordinator, documental, specialist, legislation...
+last_updated: YYYY-MM-DD
+---
 ```
-<!-- v1.0 | YYYY-MM | <nome do agente> -->
 
-# <Nome do Agente> — Prompt
+### Estrutura obrigatória do corpo do prompt
+
+Após o front matter, todo arquivo de prompt deve seguir esta estrutura:
+
+```markdown
+# <Nome do Agente> — Reis Esteves Advocacia
 
 ## Papel
 <descrição do papel do agente>
 
-## Input esperado
-<descrição do input que o agente recebe>
+## Inputs Necessários
+<descrição/lista do que o agente recebe antes de executar sua tarefa>
 
-## Tarefa
-<lista numerada das tarefas que o agente deve executar>
+## <Seções temáticas do agente>
+<processo, conhecimento especializado, checklist, tabelas de referência etc. — livres por agente, tantas quanto necessário>
 
 ## Restrições
-- Não invente fontes jurídicas
-- Não tome decisões jurídicas autônomas
+- Não invente fontes jurídicas — sinalize `hallucination_risk: true` quando não houver fonte verificável
+- Não tome decisões jurídicas autônomas (competência, tese, pedidos, valores)
 - Não afirme direitos do cliente sem base em fonte verificável
-- Retorne sempre em JSON estruturado conforme o schema definido
+- Todo output jurídico deve carregar `status: "DRAFT_PENDING_REVIEW"` até aprovação humana
 
-## Output obrigatório (JSON)
-<schema JSON esperado>
+## Output Esperado
 
-## Exemplos
-<exemplos de input e output quando necessário>
+=== RELATÓRIO: [NOME DO AGENTE] — [MÓDULO] ===
+Processo: [Cliente / Matéria]
+Data: [Data]
+Etapa: [Etapa atual]
+Status: CONCLUÍDO | EM ANDAMENTO | BLOQUEADO
+
+[CONTEÚDO DO RELATÓRIO]
+
+Próxima etapa: [nome da próxima etapa]
+Encaminhar para: [Agente responsável]
 ```
 
-- Ao alterar um prompt, incremente a versão no comentário do topo
+O bloco de `## Output Esperado` deve seguir o formato padrão definido em `prompts/_shared/output_format.md`.
+
+- Ao alterar um prompt, incremente o campo `version` (semver) e atualize `last_updated`
 - Nunca sobrescreva um prompt sem registrar a versão anterior em docs/adr/
 
 ---
