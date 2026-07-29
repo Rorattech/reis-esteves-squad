@@ -1,0 +1,109 @@
+"""Testes do serviço de cadastro de clientes (app/services/client_service.py)."""
+
+import uuid
+
+from sqlalchemy import select, text
+
+from app.core.db import async_session_factory
+from app.models.audit_log import AuditLog
+from app.models.enums import AuditActor
+from app.models.schemas.client import ClientCreate, ClientUpdate
+from app.services.client_service import create_client, update_client
+from tests.conftest import _SET_TENANT_GUC, TenantFixture
+
+
+async def test_create_client_persists_and_audits(tenant: TenantFixture) -> None:
+    async with async_session_factory() as session:
+        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        client = await create_client(
+            session,
+            tenant_id=tenant.tenant_id,
+            actor_id=tenant.user_id,
+            payload=ClientCreate(full_name="Maria Souza", document_number="12345678900"),
+        )
+
+        assert client.id is not None
+        assert client.tenant_id == tenant.tenant_id
+        assert client.full_name == "Maria Souza"
+
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.tenant_id == tenant.tenant_id, AuditLog.action == "cadastrou cliente"
+            )
+        )
+        assert audit is not None
+        assert audit.actor == AuditActor.HUMAN
+        assert audit.case_id is None
+        # nenhum dado pessoal em claro deve sobreviver ao audit_log — apenas hashes.
+        assert "Maria Souza" not in audit.input_hash
+        assert "12345678900" not in audit.input_hash
+
+
+async def test_update_client_changes_fields_and_audits(tenant: TenantFixture) -> None:
+    async with async_session_factory() as session:
+        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        client = await create_client(
+            session,
+            tenant_id=tenant.tenant_id,
+            actor_id=tenant.user_id,
+            payload=ClientCreate(full_name="Cliente Original"),
+        )
+
+        updated = await update_client(
+            session,
+            tenant_id=tenant.tenant_id,
+            actor_id=tenant.user_id,
+            client_id=client.id,
+            payload=ClientUpdate(full_name="Cliente Corrigido"),
+        )
+
+        assert updated is not None
+        assert updated.full_name == "Cliente Corrigido"
+
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.tenant_id == tenant.tenant_id, AuditLog.action == "atualizou cliente"
+            )
+        )
+        assert audit is not None
+
+
+async def test_update_client_returns_none_for_unknown_client(tenant: TenantFixture) -> None:
+    async with async_session_factory() as session:
+        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        result = await update_client(
+            session,
+            tenant_id=tenant.tenant_id,
+            actor_id=tenant.user_id,
+            client_id=uuid.uuid4(),
+            payload=ClientUpdate(full_name="Não existe"),
+        )
+        assert result is None
+
+
+async def test_client_of_one_tenant_is_not_visible_to_another(
+    tenant: TenantFixture, other_tenant: TenantFixture
+) -> None:
+    async with async_session_factory() as session:
+        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        client = await create_client(
+            session,
+            tenant_id=tenant.tenant_id,
+            actor_id=tenant.user_id,
+            payload=ClientCreate(full_name="Cliente do Tenant A"),
+        )
+        client_id = client.id
+
+    # RLS (não apenas o filtro tenant_id em Python) bloqueia a leitura: mesmo
+    # passando tenant_id=other_tenant.tenant_id ao serviço, a sessão do banco
+    # está escopada para other_tenant via app.current_tenant.
+    async with async_session_factory() as session:
+        await session.execute(text(_SET_TENANT_GUC), {"t": str(other_tenant.tenant_id)})
+        result = await update_client(
+            session,
+            tenant_id=other_tenant.tenant_id,
+            actor_id=other_tenant.user_id,
+            client_id=client_id,
+            payload=ClientUpdate(full_name="Tentativa de sequestro"),
+        )
+        assert result is None

@@ -136,7 +136,8 @@ Teses jurídicas de um escritório nunca aparecem na busca de outro.
 
 ### Módulo 1 — Intake & Routing
 
-Agentes: Coordenador Digital + Triagem Digital
+Agentes: Coordenador Digital + Triagem Digital — implementação e fluxo
+detalhado em docs/intake_graph_flow.md
 
 - Classifica a plataforma envolvida (Meta, Shopee, Mercado Livre, WhatsApp, etc.)
 - Identifica a modalidade do golpe (PIX, Marketplace, Falso Advogado, etc.)
@@ -204,6 +205,9 @@ Prompts são tratados como código — versionados, testados e auditados.
 - Nunca inline no código Python
 - Testes de regressão (Evaluations) ao trocar versão de modelo de IA
 - Mudanças de prompt registradas em docs/adr/
+- Carregamento em runtime centralizado em `backend/app/core/prompts.py`
+  (composição em 4 camadas, validação de front matter/semver e hash por
+  camada para audit_log) — API interna documentada em docs/prompt_loader.md
 
 ---
 

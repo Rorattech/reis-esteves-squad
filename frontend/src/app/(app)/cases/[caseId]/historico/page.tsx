@@ -1,5 +1,10 @@
-import { ModulePlaceholder } from "@/components/cases/ModulePlaceholder";
+"use client";
+
+import { useParams } from "next/navigation";
+
+import { AuditLogTimeline } from "@/components/cases/AuditLogTimeline";
 
 export default function CaseHistoricoPage() {
-  return <ModulePlaceholder moduleName="Histórico" />;
+  const params = useParams<{ caseId: string }>();
+  return <AuditLogTimeline caseId={params.caseId} />;
 }

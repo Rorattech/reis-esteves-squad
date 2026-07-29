@@ -10,6 +10,7 @@ from app.models.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.audit_log import AuditLog
     from app.models.case import Case
+    from app.models.client import Client
     from app.models.user import User
 
 
@@ -26,6 +27,9 @@ class Tenant(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
 
     users: Mapped[list["User"]] = relationship(
+        back_populates="tenant", cascade="all, delete-orphan"
+    )
+    clients: Mapped[list["Client"]] = relationship(
         back_populates="tenant", cascade="all, delete-orphan"
     )
     cases: Mapped[list["Case"]] = relationship(

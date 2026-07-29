@@ -86,7 +86,7 @@ def audit_entry_to_orm(
     entry: AuditEntry,
     *,
     tenant_id: uuid.UUID,
-    case_id: uuid.UUID,
+    case_id: uuid.UUID | None = None,
 ) -> AuditLog:
     """Converte uma AuditEntry (CaseState) em uma linha persistível de audit_logs.
 
@@ -98,7 +98,8 @@ def audit_entry_to_orm(
     Args:
         entry: Entrada de auditoria gerada por `create_audit_entry`.
         tenant_id: Tenant dono do caso — nunca inferido do conteúdo da entrada.
-        case_id: Caso ao qual esta ação pertence.
+        case_id: Caso ao qual esta ação pertence. None para ações auditáveis
+            que ainda não pertencem a um caso (ex.: cadastro de cliente).
 
     Returns:
         Instância de AuditLog pronta para `session.add(...)` — o chamador é

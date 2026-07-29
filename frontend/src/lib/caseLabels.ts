@@ -1,4 +1,12 @@
-import type { FraudType, UrgencyLevel } from "@/types/api";
+import type {
+  AuditActor,
+  CaseArea,
+  CaseStatus,
+  DocumentChecklistStatus,
+  FraudType,
+  IntakeOutcome,
+  UrgencyLevel,
+} from "@/types/api";
 
 export const FRAUD_TYPE_LABELS: Record<FraudType, string> = {
   pix: "Golpe PIX",
@@ -13,4 +21,42 @@ export const URGENCY_LABELS: Record<UrgencyLevel, string> = {
   medium: "Média",
   high: "Alta",
   critical: "Crítica",
+};
+
+export const CASE_AREA_LABELS: Record<CaseArea, string> = {
+  civil: "Cível",
+  family: "Família",
+  criminal: "Penal",
+  labor: "Trabalhista",
+  consumer: "Consumidor",
+  digital: "Digital",
+};
+
+export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
+  draft: "Rascunho",
+  in_progress: "Em andamento",
+  pending_approval: "Aguardando aprovação",
+  approved: "Aprovado",
+  completed: "Concluído",
+  archived: "Arquivado",
+};
+
+export const DOCUMENT_STATUS_LABELS: Record<DocumentChecklistStatus, string> = {
+  received: "Recebido",
+  pending: "Pendente",
+  waived: "Dispensado",
+};
+
+/** Espelha orchestrator.state.IntakeOutcome (Fase 2.3) — nunca um estado final do caso. */
+export const INTAKE_OUTCOME_LABELS: Record<IntakeOutcome, string> = {
+  completed: "Classificação preliminar concluída",
+  blocked: "Fora do escopo do Squad Digital",
+  awaiting_information: "Aguardando mais informações",
+  awaiting_human_review: "Aguardando revisão humana",
+};
+
+export const AUDIT_ACTOR_LABELS: Record<AuditActor, string> = {
+  system: "Sistema",
+  agent: "Agente de IA",
+  human: "Advogado(a)",
 };

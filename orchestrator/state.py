@@ -26,6 +26,27 @@ ActorType = Literal["system", "agent", "human"]
 DraftStatus = Literal["DRAFT_PENDING_REVIEW", "APPROVED", "REJECTED"]
 """Status obrigatório de todo output jurídico gerado por IA (CLAUDE.md, seção 2)."""
 
+IntakeOutcome = Literal[
+    "completed", "blocked", "awaiting_information", "awaiting_human_review"
+]
+"""Estado explícito da etapa de Intake (módulo 1 — coordinator/triage):
+
+- "completed": um nó concluiu sua própria classificação com confiança
+  suficiente (estado interno de transição — o coordinator usa isso só para
+  decidir se a triagem deve rodar em seguida, nunca é um estado final do caso).
+- "blocked": caso fora do escopo do Squad Digital — precisa ser encaminhado
+  manualmente (CLAUDE.md, seção 2: nenhum outro fluxo é inventado).
+- "awaiting_information": dados insuficientes para classificar com confiança
+  — o nó não inventa fatos ausentes, sinaliza o que falta.
+- "awaiting_human_review": classificação/triagem concluída, mas — como todo
+  output de agente (CLAUDE.md, seção 2) — é só uma recomendação até um
+  advogado revisar e aprovar.
+"""
+
+AreaOfLaw = Literal["civil", "family", "criminal", "labor", "consumer", "digital"]
+"""Área do Direito identificada na triagem (espelha CaseArea em
+app/models/enums.py — prompts/digital/intake/triage.md)."""
+
 
 class EvidenceItem(BaseModel):
     """Um item de evidência digital classificado no módulo Evidence Matrix
@@ -33,7 +54,9 @@ class EvidenceItem(BaseModel):
     """
 
     evidence_id: str
-    evidence_type: Literal["screenshot", "payment_receipt", "fake_profile", "conversation", "other"]
+    evidence_type: Literal[
+        "screenshot", "payment_receipt", "fake_profile", "conversation", "other"
+    ]
     file_reference: str
     description: str
     relevance: Literal["low", "medium", "high"]
@@ -144,9 +167,25 @@ class CaseState(TypedDict):
 
     case_id: str
     tenant_id: str
+    narrative: str
+    """Relato inicial em texto livre do cliente/advogado (equivalente a
+    CaseIntake.narrative, backend/app/models/case_intake.py) — entrada
+    principal dos nós coordinator/triage. Nunca inventado pelos agentes."""
     platform: str
     fraud_type: str
     urgency: Literal["low", "medium", "high", "critical"]
+    area: AreaOfLaw | None
+    """Área do Direito — preenchida pela triagem (None até lá)."""
+    matter: str | None
+    """Matéria específica dentro da área — preenchida pela triagem."""
+    intake_outcome: IntakeOutcome | None
+    """Resultado mais recente do módulo Intake — ver `IntakeOutcome`."""
+    missing_information: list[str]
+    """Lacunas de informação identificadas por coordinator/triage — nunca
+    preenchidas com fatos inventados (CLAUDE.md, seção 2)."""
+    out_of_scope_reason: str | None
+    """Motivo pelo qual o coordinator marcou o caso como fora do escopo do
+    Squad Digital — só preenchido quando intake_outcome == "blocked"."""
     documents_requested: list[str]
     evidence_inventory: list[EvidenceItem]
     legal_sources: list[LegalSource]

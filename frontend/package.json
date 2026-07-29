@@ -6,26 +6,33 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@hookform/resolvers": "3.9.1",
     "next": "16.2.12",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "zustand": "5.0.2",
     "react-hook-form": "7.54.2",
     "zod": "3.24.1",
-    "@hookform/resolvers": "3.9.1"
+    "zustand": "5.0.2"
   },
   "devDependencies": {
-    "typescript": "5.7.3",
-    "@types/node": "22.10.5",
+    "@tailwindcss/postcss": "4.3.3",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/node": "22.20.1",
     "@types/react": "19.0.4",
     "@types/react-dom": "19.0.2",
-    "tailwindcss": "4.3.3",
-    "@tailwindcss/postcss": "4.3.3",
+    "@vitejs/plugin-react": "6.0.4",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.2.12"
+    "eslint-config-next": "16.2.12",
+    "jsdom": "30.0.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.7.3",
+    "vitest": "4.1.10"
   },
   "overrides": {
     "postcss": "8.5.23",

@@ -63,3 +63,25 @@ class ModuleName(str, enum.Enum):
     STRATEGY = "strategy"
     DRAFTING = "drafting"
     REVIEW = "review"
+
+
+class CaseArea(str, enum.Enum):
+    """Área do Direito identificada no módulo de Triagem (ver
+    prompts/digital/intake/triage.md — Digital = Meta/Facebook/Marketplace/
+    Shopee/Mercado Livre/WhatsApp/falso advogado/golpe PIX).
+    """
+
+    CIVIL = "civil"
+    FAMILY = "family"
+    CRIMINAL = "criminal"
+    LABOR = "labor"
+    CONSUMER = "consumer"
+    DIGITAL = "digital"
+
+
+class DocumentChecklistStatus(str, enum.Enum):
+    """Status de um item do checklist de documentos de um caso."""
+
+    RECEIVED = "received"
+    PENDING = "pending"
+    WAIVED = "waived"

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_tenant_session
 from app.core.rbac import require_role
 from app.models.case import Case
+from app.models.client import Client
 from app.models.enums import UserRole
 from app.models.schemas.case import CaseCreate, CaseResponse, CaseUpdate
 
@@ -25,6 +26,33 @@ router = APIRouter(prefix="/cases", tags=["cases"])
 
 # viewer só lê; abrir/editar um caso exige um papel operacional (CLAUDE.md, seção 12).
 _require_case_writer = require_role(UserRole.ADMIN, UserRole.LAWYER, UserRole.PARALEGAL)
+
+
+async def _ensure_client_belongs_to_tenant(
+    session: AsyncSession, tenant_id: uuid.UUID, client_id: uuid.UUID | None
+) -> None:
+    """Impede vincular um caso a um client_id de outro tenant.
+
+    A FK cases.client_id -> clients.id, por si só, não garante isolamento de
+    tenant (RLS valida apenas tenant_id da própria linha de `cases`) — sem
+    esta checagem, um tenant malicioso poderia referenciar o client_id de
+    outro tenant, violando CLAUDE.md seção 7.
+
+    Args:
+        session: Sessão do banco já escopada por tenant.
+        tenant_id: Tenant autenticado da request.
+        client_id: client_id informado no payload, se houver.
+
+    Raises:
+        HTTPException: 404 se client_id não existir neste tenant.
+    """
+    if client_id is None:
+        return
+    client = await session.scalar(
+        select(Client.id).where(Client.tenant_id == tenant_id, Client.id == client_id)
+    )
+    if client is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Cliente não encontrado.")
 
 
 @router.post(
@@ -49,12 +77,18 @@ async def create_case(
     Returns:
         Caso recém-criado.
     """
+    tenant_id = uuid.UUID(request.state.tenant_id)
+    await _ensure_client_belongs_to_tenant(session, tenant_id, payload.client_id)
+
     case = Case(
-        tenant_id=uuid.UUID(request.state.tenant_id),
+        tenant_id=tenant_id,
         user_id=uuid.UUID(request.state.user_id),
         platform=payload.platform,
         fraud_type=payload.fraud_type,
         urgency=payload.urgency,
+        client_id=payload.client_id,
+        area=payload.area,
+        matter=payload.matter,
     )
     session.add(case)
     await session.commit()
@@ -151,6 +185,10 @@ async def update_case(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Caso não encontrado.")
 
     updates = payload.model_dump(exclude_unset=True)
+    if "client_id" in updates:
+        await _ensure_client_belongs_to_tenant(
+            session, uuid.UUID(request.state.tenant_id), updates["client_id"]
+        )
     for field, value in updates.items():
         setattr(case, field, value)
 

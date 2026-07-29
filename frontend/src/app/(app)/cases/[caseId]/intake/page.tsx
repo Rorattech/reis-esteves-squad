@@ -1,5 +1,143 @@
-import { ModulePlaceholder } from "@/components/cases/ModulePlaceholder";
+"use client";
 
+import { useParams } from "next/navigation";
+import { useState } from "react";
+
+import { AuditLogTimeline } from "@/components/cases/AuditLogTimeline";
+import { IntakeNarrativeForm } from "@/components/cases/IntakeNarrativeForm";
+import { IntakeResultPanel } from "@/components/cases/IntakeResultPanel";
+import { IntakeReviewForm } from "@/components/cases/IntakeReviewForm";
+import { RunTriageAction } from "@/components/cases/RunTriageAction";
+import { AccessDeniedState } from "@/components/ui/AccessDeniedState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { useAuth } from "@/hooks/useAuth";
+import { useCase } from "@/hooks/useCase";
+import { useCaseIntake } from "@/hooks/useCaseIntake";
+import { useIntakeResult } from "@/hooks/useIntakeResult";
+import { canWriteCase } from "@/lib/roles";
+
+/**
+ * Aba Intake (docs/roadmap_mvp_squad_digital.md, 2.6) — onde o humano no
+ * loop existe de verdade: relato → triagem → resultado → aprovar/corrigir/
+ * devolver. Cada ação re-carrega caso/relato/resultado/checklist/histórico
+ * a partir do backend (nunca atualiza a UI de forma otimista — a
+ * classificação e a decisão de avançar são sempre do servidor).
+ */
 export default function CaseIntakePage() {
-  return <ModulePlaceholder moduleName="Intake" />;
+  const params = useParams<{ caseId: string }>();
+  const caseId = params.caseId;
+  const { user } = useAuth();
+  const canWrite = canWriteCase(user);
+
+  const {
+    case: caseData,
+    isLoading: caseLoading,
+    error: caseError,
+    notFound,
+    reload: reloadCase,
+  } = useCase(caseId);
+  const {
+    intake,
+    isLoading: intakeLoading,
+    error: intakeError,
+    reload: reloadIntake,
+  } = useCaseIntake(caseId);
+  const {
+    result,
+    isLoading: resultLoading,
+    error: resultError,
+    notRunYet,
+    reload: reloadResult,
+  } = useIntakeResult(caseId);
+
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [checklistVersion, setChecklistVersion] = useState(0);
+
+  function refreshEverything() {
+    reloadCase();
+    reloadIntake();
+    reloadResult();
+    setHistoryVersion((version) => version + 1);
+    setChecklistVersion((version) => version + 1);
+  }
+
+  if (caseLoading || intakeLoading) {
+    return <LoadingState label="Carregando intake..." />;
+  }
+  if (notFound) return <AccessDeniedState />;
+  if (caseError) return <ErrorState message={caseError} onRetry={reloadCase} />;
+  if (intakeError) return <ErrorState message={intakeError} onRetry={reloadIntake} />;
+  if (!caseData) return null;
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <h2 className="text-base font-semibold text-slate-900">Relato inicial</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Texto livre do cliente + campos estruturados coletados no primeiro contato.
+        </p>
+        <div className="mt-3">
+          <IntakeNarrativeForm
+            caseData={caseData}
+            intake={intake}
+            canWrite={canWrite}
+            onSaved={refreshEverything}
+          />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-base font-semibold text-slate-900">Triagem</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Classifica plataforma, modalidade e urgência, e monta o checklist de documentos — sempre
+          como recomendação revisável.
+        </p>
+        <div className="mt-3 space-y-4">
+          <RunTriageAction
+            caseId={caseId}
+            hasIntake={intake !== null}
+            canWrite={canWrite}
+            onCompleted={refreshEverything}
+          />
+          <IntakeResultPanel
+            result={result}
+            isLoading={resultLoading}
+            error={resultError}
+            notRunYet={notRunYet}
+            onRetry={reloadResult}
+            caseId={caseId}
+            canWrite={canWrite}
+            checklistVersion={checklistVersion}
+          />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-base font-semibold text-slate-900">Revisão humana</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Aprovar, corrigir ou devolver a recomendação da triagem para complementação.
+        </p>
+        <div className="mt-3">
+          <IntakeReviewForm
+            caseId={caseId}
+            caseStatus={caseData.status}
+            result={result}
+            canWrite={canWrite}
+            onReviewed={refreshEverything}
+          />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-base font-semibold text-slate-900">Histórico de decisões</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Últimas ações registradas neste caso — o histórico completo fica na aba Histórico.
+        </p>
+        <div className="mt-3">
+          <AuditLogTimeline key={historyVersion} caseId={caseId} limit={5} />
+        </div>
+      </section>
+    </div>
+  );
 }

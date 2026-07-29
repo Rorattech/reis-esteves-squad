@@ -7,7 +7,7 @@ COMPOSE := cd infra && docker compose --env-file ../.env
 
 .PHONY: help env up down down-v build rebuild restart ps logs \
         sh-backend sh-frontend sh-postgres sh-redis sh-n8n \
-        psql redis-cli test lint fmt clean
+        psql redis-cli migrations test lint fmt clean
 
 help: ## Lista os comandos disponíveis
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -17,6 +17,9 @@ env: ## Cria .env a partir de .env.example (não sobrescreve se já existir)
 
 up: env ## Builda as imagens (se preciso) e sobe todos os serviços em background
 	$(COMPOSE) up -d --build
+
+migrations: ## Aplica as migrations do Alembic (schema + RLS + tenant/admin de teste + casos de exemplo)
+	$(COMPOSE) exec backend alembic upgrade head
 
 down: ## Para e remove os containers (mantém os volumes)
 	$(COMPOSE) down

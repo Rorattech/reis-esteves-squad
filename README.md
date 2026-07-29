@@ -26,6 +26,14 @@ por Row Level Security no Postgres).
 ## Requisitos
 
 - [Docker](https://docs.docker.com/get-docker/) e Docker Compose v2
+- [GNU Make](https://www.gnu.org/software/make/) — usado pelos comandos `make` deste
+  README (`make up`, `make migrations` etc.). Já vem instalado por padrão no macOS e na
+  maioria das distribuições Linux; para conferir, rode `make --version`. Se não tiver:
+  - **macOS:** instale as Command Line Tools com `xcode-select --install` (ou via
+    [Homebrew](https://brew.sh/): `brew install make`)
+  - **Linux (Debian/Ubuntu):** `sudo apt install make`
+  - **Windows:** use o [WSL](https://learn.microsoft.com/windows/wsl/install) (recomendado)
+    ou instale via [Chocolatey](https://chocolatey.org/): `choco install make`
 - Isso é suficiente para rodar o projeto inteiro. Para desenvolver fora do container
   (ex.: rodar `pytest`/`next dev` direto no host):
   - Python 3.13+ (backend)
@@ -62,8 +70,8 @@ make up
 Isso builda e sobe backend, frontend, Postgres, Redis e n8n. Depois:
 
 ```bash
-# 3. Aplique as migrations (cria o schema + tenant de teste, ver abaixo)
-docker compose -f infra/docker-compose.yml --env-file .env exec backend alembic upgrade head
+# 3. Aplique as migrations (cria o schema + RLS + tenant de teste + casos de exemplo, ver abaixo)
+make migrations
 ```
 
 Serviços disponíveis:
@@ -77,8 +85,8 @@ Serviços disponíveis:
 
 ### Login de teste
 
-As migrations já semeiam um tenant e um usuário admin para testes manuais (só em
-`BACKEND_ENV=development`, nunca em produção):
+As migrations já semeiam um tenant, um usuário admin e 7 casos fictícios do Squad
+Digital para testes manuais (só em `BACKEND_ENV=development`, nunca em produção):
 
 - **E-mail:** `admin@reisesteves.com.br`
 - **Senha:** `ReisEsteves2026!`
@@ -89,6 +97,7 @@ As migrations já semeiam um tenant e um usuário admin para testes manuais (só
 make ps            # status dos containers
 make logs-backend  # logs de um serviço específico
 make sh-backend    # shell dentro do container do backend
+make migrations    # aplica as migrations do Alembic (rode de novo após atualizar o código)
 make test          # roda a suíte de testes do backend (pytest)
 make lint          # ruff (backend) + eslint (frontend)
 make fmt           # formata o backend com black

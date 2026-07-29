@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     backend_max_upload_mb: int = 50
     backend_rate_limit_per_minute: int = 60
 
+    # Nome do modelo usado pelos nós LangGraph do módulo Intake (CLAUDE.md,
+    # seção 15 — nunca hardcoded no nó chamador, sempre via esta constante).
+    intake_llm_model: str = "claude-sonnet-5"
+
     database_url: str
     redis_url: str
 

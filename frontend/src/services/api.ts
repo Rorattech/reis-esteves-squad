@@ -8,7 +8,22 @@ import {
   getStoredRefreshToken,
   useAuthStore,
 } from "@/stores/authStore";
-import type { Case, CaseCreateInput, TokenResponse, User } from "@/types/api";
+import type {
+  AuditLogEntry,
+  Case,
+  CaseCreateInput,
+  CaseDocument,
+  CaseDocumentCreateInput,
+  CaseDocumentUpdateInput,
+  CaseIntake,
+  CaseIntakeCreateInput,
+  CaseIntakeUpdateInput,
+  CaseUpdateInput,
+  IntakeResult,
+  IntakeReviewInput,
+  TokenResponse,
+  User,
+} from "@/types/api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -132,5 +147,73 @@ export const api = {
 
   async createCase(input: CaseCreateInput): Promise<Case> {
     return request<Case>("/cases", { method: "POST", body: JSON.stringify(input) });
+  },
+
+  async updateCase(caseId: string, input: CaseUpdateInput): Promise<Case> {
+    return request<Case>(`/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(input) });
+  },
+
+  /** 404 se o caso não existir OU se o relato inicial ainda não tiver sido enviado. */
+  async getCaseIntake(caseId: string): Promise<CaseIntake> {
+    return request<CaseIntake>(`/cases/${caseId}/intake`);
+  },
+
+  /** Idempotente: reenviar substitui o relato anterior (mesmo endpoint para criar e editar). */
+  async submitCaseIntake(caseId: string, input: CaseIntakeCreateInput): Promise<CaseIntake> {
+    return request<CaseIntake>(`/cases/${caseId}/intake`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async updateCaseIntake(caseId: string, input: CaseIntakeUpdateInput): Promise<CaseIntake> {
+    return request<CaseIntake>(`/cases/${caseId}/intake`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async listCaseDocuments(caseId: string): Promise<CaseDocument[]> {
+    return request<CaseDocument[]>(`/cases/${caseId}/documents`);
+  },
+
+  async addCaseDocument(caseId: string, input: CaseDocumentCreateInput): Promise<CaseDocument> {
+    return request<CaseDocument>(`/cases/${caseId}/documents`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async updateCaseDocument(
+    caseId: string,
+    documentId: string,
+    input: CaseDocumentUpdateInput,
+  ): Promise<CaseDocument> {
+    return request<CaseDocument>(`/cases/${caseId}/documents/${documentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
+
+  /** Executa coordinator + triage (orchestrator/graphs/intake.py) para o caso. */
+  async runIntake(caseId: string): Promise<IntakeResult> {
+    return request<IntakeResult>(`/cases/${caseId}/intake/run`, { method: "POST" });
+  },
+
+  /** 404 se o caso não existir OU se o Intake ainda não tiver sido executado. */
+  async getIntakeResult(caseId: string): Promise<IntakeResult> {
+    return request<IntakeResult>(`/cases/${caseId}/intake/result`);
+  },
+
+  /** 409 se o caso não tiver nenhuma recomendação pendente de revisão. */
+  async reviewIntake(caseId: string, input: IntakeReviewInput): Promise<Case> {
+    return request<Case>(`/cases/${caseId}/intake/review`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getAuditLog(caseId: string): Promise<AuditLogEntry[]> {
+    return request<AuditLogEntry[]>(`/cases/${caseId}/audit-log`);
   },
 };

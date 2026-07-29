@@ -1,13 +1,5 @@
+import { CASE_STATUS_LABELS } from "@/lib/caseLabels";
 import type { CaseStatus } from "@/types/api";
-
-const STATUS_LABELS: Record<CaseStatus, string> = {
-  draft: "Rascunho",
-  in_progress: "Em andamento",
-  pending_approval: "Aguardando aprovação",
-  approved: "Aprovado",
-  completed: "Concluído",
-  archived: "Arquivado",
-};
 
 const STATUS_STYLES: Record<CaseStatus, string> = {
   draft: "bg-slate-100 text-slate-700",
@@ -23,7 +15,7 @@ export function StatusBadge({ status }: { status: CaseStatus }) {
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[status]}`}
     >
-      {STATUS_LABELS[status]}
+      {CASE_STATUS_LABELS[status]}
     </span>
   );
 }

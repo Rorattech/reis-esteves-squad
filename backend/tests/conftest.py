@@ -41,6 +41,7 @@ from app.core.db import async_session_factory  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.case import Case  # noqa: E402
+from app.models.client import Client  # noqa: E402
 from app.models.enums import FraudType, UrgencyLevel, UserRole  # noqa: E402
 from app.models.tenant import Tenant  # noqa: E402
 from app.models.user import User  # noqa: E402
@@ -64,6 +65,7 @@ class TenantFixture:
         self.email = email
         self.password = password
         self.case_id: uuid.UUID | None = None
+        self.client_id: uuid.UUID | None = None
 
 
 async def _create_tenant(role: UserRole = UserRole.ADMIN) -> TenantFixture:
@@ -128,6 +130,19 @@ async def viewer_tenant() -> AsyncIterator[TenantFixture]:
         yield fixture
     finally:
         await _delete_tenant(fixture.tenant_id)
+
+
+@pytest_asyncio.fixture
+async def tenant_with_client(tenant: TenantFixture) -> TenantFixture:
+    """Tenant de teste com um cliente já cadastrado (útil para testes de intake)."""
+    async with async_session_factory() as session:
+        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        client = Client(tenant_id=tenant.tenant_id, full_name="Cliente Pytest")
+        session.add(client)
+        await session.commit()
+        await session.refresh(client)
+        tenant.client_id = client.id
+    return tenant
 
 
 @pytest_asyncio.fixture

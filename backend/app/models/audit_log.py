@@ -33,12 +33,14 @@ class AuditLog(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         nullable=False,
         index=True,
     )
-    case_id: Mapped[uuid.UUID] = mapped_column(
+    case_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("cases.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
+    """Opcional: nulo para ações auditáveis que ainda não pertencem a um caso
+    (ex.: cadastro de um cliente antes de qualquer caso ser aberto)."""
     actor: Mapped[AuditActor] = mapped_column(
         db_enum(AuditActor, "audit_actor"),
         nullable=False,
@@ -66,4 +68,4 @@ class AuditLog(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     )
 
     tenant: Mapped["Tenant"] = relationship(back_populates="audit_logs")
-    case: Mapped["Case"] = relationship(back_populates="audit_logs")
+    case: Mapped["Case | None"] = relationship(back_populates="audit_logs")
