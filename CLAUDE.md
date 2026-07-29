@@ -450,7 +450,7 @@ Toda ação humana de aprovar, rejeitar, editar, corrigir ou devolver uma etapa 
 
 ## 17. Checklist ao implementar qualquer nova funcionalidade
 
-Antes de considerar uma tarefa concluída, verifique:
+Antes de considerar uma tarefa concluída, verifique o docs/roadmap_mvp_squad_digital.md e:
 
 - [ ] Schema Pydantic criado para input e output
 - [ ] CaseState atualizado se necessário com novos campos
