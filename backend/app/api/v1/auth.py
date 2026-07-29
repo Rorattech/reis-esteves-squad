@@ -14,6 +14,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.db import get_auth_bootstrap_session
 from app.core.security import (
@@ -45,7 +46,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def register(
     payload: RegisterRequest,
     session: AsyncSession = Depends(get_auth_bootstrap_session),
-) -> User:
+) -> UserResponse:
     """Cria um novo tenant (escritório) com seu primeiro usuário, papel admin.
 
     Args:
@@ -78,7 +79,14 @@ async def register(
     await session.refresh(admin_user)
 
     logger.info("auth.register", tenant_id=str(tenant.id), user_id=str(admin_user.id))
-    return admin_user
+    return UserResponse(
+        id=admin_user.id,
+        tenant_id=admin_user.tenant_id,
+        tenant_name=tenant.name,
+        email=admin_user.email,
+        role=admin_user.role,
+        created_at=admin_user.created_at,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -160,7 +168,7 @@ async def refresh(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(request: Request) -> User:
+async def get_me(request: Request) -> UserResponse:
     """Retorna os dados do usuário autenticado na request atual.
 
     tenant_id e user_id já foram validados pelo TenantMiddleware, que também
@@ -171,18 +179,28 @@ async def get_me(request: Request) -> User:
             `state.user_id` definidos pelo TenantMiddleware.
 
     Returns:
-        Dados do usuário autenticado.
+        Dados do usuário autenticado, incluindo o nome do tenant (para a UI
+        exibir "escritório atual" sem precisar de uma segunda chamada).
 
     Raises:
         HTTPException: 404 se o usuário do token não existir no tenant atual.
     """
     session: AsyncSession = request.state.db
     user = await session.scalar(
-        select(User).where(
+        select(User)
+        .options(selectinload(User.tenant))
+        .where(
             User.tenant_id == uuid.UUID(request.state.tenant_id),
             User.id == uuid.UUID(request.state.user_id),
         )
     )
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado.")
-    return user
+    return UserResponse(
+        id=user.id,
+        tenant_id=user.tenant_id,
+        tenant_name=user.tenant.name,
+        email=user.email,
+        role=user.role,
+        created_at=user.created_at,
+    )

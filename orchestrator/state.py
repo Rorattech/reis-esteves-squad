@@ -33,9 +33,7 @@ class EvidenceItem(BaseModel):
     """
 
     evidence_id: str
-    evidence_type: Literal[
-        "screenshot", "payment_receipt", "fake_profile", "conversation", "other"
-    ]
+    evidence_type: Literal["screenshot", "payment_receipt", "fake_profile", "conversation", "other"]
     file_reference: str
     description: str
     relevance: Literal["low", "medium", "high"]
@@ -156,6 +154,14 @@ class CaseState(TypedDict):
     draft_petition: DraftPetition | None
     human_approval_required: bool
     human_approval_status: Literal["pending", "approved", "rejected", "na"]
+    approved_by: str | None
+    """Identificação do advogado que aprovou a etapa mais recente que exigia
+    aprovação humana (CLAUDE.md, seção 9) — nível do caso como um todo, distinto
+    de StrategyMemo.approved_by/DraftPetition.approved_by, que registram a
+    aprovação de cada artefato individualmente.
+    """
+    approved_at: datetime | None
+    """Timestamp da aprovação registrada em approved_by (CLAUDE.md, seção 9)."""
     audit_trail: list[AuditEntry]
     current_module: str
     status: Literal["active", "suspended", "completed", "error"]

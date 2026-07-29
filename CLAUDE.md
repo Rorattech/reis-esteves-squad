@@ -39,6 +39,7 @@ SEMPRE pesquise pelas versões mais atuais das tecnologias (stack) escolhidas. N
 | Cache          | Redis LTS                                               |
 | Automação      | n8n self-hosted (via webhook — nunca exposto ao cliente)|
 | Frontend       | Next.js 16+ App Router, TypeScript estrito, Tailwind CSS|
+| UI Kit         | Tailwind CSS + shadcn/ui                                |
 | Infra local    | Docker Compose                                          |
 | Infra produção | A definir (Railway, Render ou VPS própria)              |
 
@@ -48,7 +49,7 @@ Variáveis de ambiente: sempre via .env + Pydantic BaseSettings. Nunca hardcoded
 
 ## 4. Estrutura de pastas — respeite sempre
 
-```
+
 reis-esteves-squad/
 ├── backend/
 │   ├── app/
@@ -98,7 +99,7 @@ reis-esteves-squad/
 │   ├── adr/                 # Architecture Decision Records
 │   └── api-spec.yaml
 └── CLAUDE.md                # este arquivo
-```
+
 
 ---
 
@@ -113,7 +114,7 @@ reis-esteves-squad/
 
 Exemplo de função bem escrita:
 
-```python
+python
 async def analyze_evidence(
     state: CaseState,
     config: RunnableConfig,
@@ -131,7 +132,7 @@ async def analyze_evidence(
         EvidenceAnalysisError: Se nenhuma evidência válida for encontrada.
     """
     ...
-```
+
 
 ---
 
@@ -157,7 +158,7 @@ Regras:
 - Use Row Level Security (RLS) no PostgreSQL como segunda camada de proteção
 - Toda nova tabela DEVE ter coluna tenant_id UUID NOT NULL com política RLS
 
-```python
+python
 # CORRETO — sempre filtre por tenant
 cases = await db.execute(
     select(Case).where(
@@ -168,7 +169,7 @@ cases = await db.execute(
 
 # ERRADO — nunca faça query sem tenant
 cases = await db.execute(select(Case))
-```
+
 
 Middleware de tenant: extraia tenant_id do JWT em cada request e injete no contexto.
 Nunca passe tenant_id como parâmetro de URL visível ao usuário final.
@@ -182,7 +183,7 @@ fonte verificável. O modelo NUNCA pode inventar precedentes, valores ou citaç�
 
 Schema obrigatório para fontes jurídicas:
 
-```python
+python
 class LegalSource(BaseModel):
     source_type: Literal["legislation", "jurisprudence", "doctrine"]
     title: str
@@ -193,7 +194,7 @@ class LegalSource(BaseModel):
     confidence: float       # 0.0 a 1.0
     verified: bool = False  # True apenas após revisão humana
     hallucination_risk: bool = False  # True se não houver fonte verificável
-```
+
 
 Se o modelo não encontrar fonte verificável:
 - Retorne o campo com hallucination_risk = True
@@ -210,7 +211,7 @@ campos do CaseState.
 
 Campos obrigatórios que todo nó do grafo deve respeitar:
 
-```
+
 case_id          UUID — identificador único do caso
 tenant_id        UUID — escritório dono do caso
 status           CaseStatus — enum com todos os estados possíveis
@@ -219,7 +220,7 @@ human_approval_required  bool — se True, pausar e aguardar aprovação
 approved_by      str | None — identificação do advogado aprovador
 approved_at      datetime | None — timestamp da aprovação
 audit_log        list[AuditEntry] — registro imutável de todas as ações
-```
+
 
 Ao criar um novo nó do grafo, sempre retorne um dicionário com apenas os campos
 que o nó efetivamente modificou. Nunca retorne o state inteiro.
@@ -230,7 +231,7 @@ que o nó efetivamente modificou. Nunca retorne o state inteiro.
 
 Cada nó do grafo deve registrar uma entrada no audit_log antes de retornar.
 
-```python
+python
 class AuditEntry(BaseModel):
     timestamp: datetime       # UTC
     actor: Literal["system", "agent", "human"]
@@ -243,11 +244,11 @@ class AuditEntry(BaseModel):
     tokens_used: int          # total de tokens consumidos
     duration_ms: int          # tempo de execução em milissegundos
     metadata: dict[str, Any]  # dados adicionais livres
-```
+
 
 Função utilitária a criar em `backend/app/core/audit.py`:
 
-```python
+python
 def create_audit_entry(
     actor_id: str,
     action: str,
@@ -261,7 +262,7 @@ def create_audit_entry(
     metadata: dict | None = None,
 ) -> AuditEntry:
     ...
-```
+
 
 ---
 
@@ -277,7 +278,7 @@ def create_audit_entry(
 
 Todo arquivo de prompt (exceto `_base.md`) deve iniciar com este front matter YAML:
 
-```yaml
+yaml
 ---
 version: 1.0.0
 squad: <nome-do-squad>       # ex: digital | shared (para prompts em _shared/) | all (para o _squad.md)
@@ -285,13 +286,13 @@ module: <nome-do-modulo>     # intake | evidence | research | strategy | draftin
 agent: <nome-do-agente>      # ex: triage, coordinator, documental, specialist, legislation...
 last_updated: YYYY-MM-DD
 ---
-```
+
 
 ### Estrutura obrigatória do corpo do prompt
 
 Após o front matter, todo arquivo de prompt deve seguir esta estrutura:
 
-```markdown
+markdown
 # <Nome do Agente> — Reis Esteves Advocacia
 
 ## Papel
@@ -321,7 +322,7 @@ Status: CONCLUÍDO | EM ANDAMENTO | BLOQUEADO
 
 Próxima etapa: [nome da próxima etapa]
 Encaminhar para: [Agente responsável]
-```
+
 
 O bloco de `## Output Esperado` deve seguir o formato padrão definido em `prompts/_shared/output_format.md`.
 
@@ -390,7 +391,64 @@ e gerencia as transições entre eles com base no status do CaseState.
 
 ---
 
-## 16. Checklist ao implementar qualquer nova funcionalidade
+## 16. Entrega vertical obrigatória — frontend incluso em cada fase
+
+Toda fase funcional do Squad Digital deve ser implementada como uma **fatia vertical completa**.
+
+Uma fase NÃO estará concluída se entregar apenas backend, banco de dados, API, LangGraph ou prompts.
+Cada capacidade voltada ao usuário deve incluir, quando aplicável:
+
+1. domínio, migrations e persistência
+2. regras de isolamento por tenant, RBAC e RLS
+3. API autenticada
+4. orquestração LangGraph
+5. **interface frontend correspondente**
+6. estados explícitos de carregamento, vazio, erro e sucesso no frontend
+7. revisão humana obrigatória nos pontos de decisão jurídica
+8. audit_log rastreável
+9. testes de backend, API e frontend
+10. documentação do fluxo
+
+### Regras do frontend como copilot jurídico
+
+O frontend é a interface de um copilot jurídico. Ele NUNCA pode:
+- Indicar que uma decisão jurídica foi tomada autonomamente
+- Permitir ou simular protocolo judicial
+- Ocultar pendências, incertezas ou fontes não verificadas
+- Aprovar automaticamente estratégia, fonte, peça ou conclusão jurídica
+- Confiar em permissões apenas no lado cliente — toda autorização deve ser verificada no backend
+
+Toda ação humana de aprovar, rejeitar, editar, corrigir ou devolver uma etapa deve:
+- Chamar o endpoint correspondente no backend
+- Gerar entrada no audit_log
+- Ser visível no histórico do caso
+
+### Ordem de implementação por fase
+
+| Fase | Backend/API | Frontend correspondente |
+|------|-------------|------------------------|
+| Fundação | Auth, JWT, multitenancy, RLS | Login, layout autenticado, navegação, componentes base |
+| Fase 2 — Intake | Endpoints de caso e triagem | Lista de casos, novo caso, formulário de intake, revisão da triagem |
+| Fase 3 — Evidências | Upload, OCR, inventário | Central de evidências, visualizador, validação humana |
+| Fase 4 — Pesquisa | LegalSource, verificação | Biblioteca de fontes, aprovação/rejeição de fontes |
+| Fase 5 — Estratégia | Geração e aprovação | Painel de estratégia, rastreabilidade, decisão humana |
+| Fase 6 — Minuta | Skeleton, drafting | Editor de minuta, versionamento, placeholders |
+| Fase 7 — Revisão | Checklist, feedback | Central de revisão, bloqueantes, feedback humano |
+| Fase 8 — Operação | Métricas, auditoria | Dashboard, fila de revisões, histórico do caso |
+
+### Componentes frontend obrigatórios (criados na fundação, reutilizados em todas as fases)
+
+- Estado de carregamento
+- Estado vazio com ação sugerida
+- Erro de API com mensagem útil (sem stack trace)
+- Badge de status do caso/etapa
+- Aviso fixo "Revisão humana obrigatória"
+- Confirmação antes de ações irreversíveis
+- Histórico de auditoria legível ao advogado
+
+---
+
+## 17. Checklist ao implementar qualquer nova funcionalidade
 
 Antes de considerar uma tarefa concluída, verifique:
 
@@ -404,3 +462,8 @@ Antes de considerar uma tarefa concluída, verifique:
 - [ ] Nenhum segredo hardcoded
 - [ ] Nenhum output jurídico sem status DRAFT_PENDING_REVIEW
 - [ ] Rota de API com autenticação JWT e verificação de role (se aplicável)
+- [ ] **Tela ou componente frontend correspondente implementado**
+- [ ] **Estados de carregamento, vazio, erro e sucesso tratados no frontend**
+- [ ] **Ação de revisão humana disponível na interface quando a etapa exigir aprovação**
+- [ ] **Testes de interface escritos para o fluxo principal e casos de erro**
+- [ ] **Nenhuma lógica de autorização confiada exclusivamente ao frontend**

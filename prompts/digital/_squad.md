@@ -3,7 +3,7 @@ version: 1.0.0
 squad: digital
 module: all
 agent: squad_context
-last_updated: 2026-28-07
+last_updated: 2026-07-28
 ---
 
 # Contexto do Squad Digital — Reis Esteves Advocacia

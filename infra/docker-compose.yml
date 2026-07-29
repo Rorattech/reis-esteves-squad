@@ -88,8 +88,12 @@ services:
 
   backend:
     build:
-      context: ../backend
-      dockerfile: Dockerfile
+      # Contexto é a raiz do repo (não ../backend): o Dockerfile precisa
+      # copiar tanto backend/ quanto orchestrator/, que são irmãos no repo
+      # (ver backend/Dockerfile e orchestrator/state.py — AuditEntry/CaseState
+      # são importados por backend/app/core/audit.py).
+      context: ..
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     env_file:
       - ../.env
@@ -99,6 +103,9 @@ services:
       - ../backend/app:/app/app
       - ../backend/alembic:/app/alembic
       - ../backend/alembic.ini:/app/alembic.ini
+      - ../backend/tests:/app/tests
+      - ../orchestrator:/app/orchestrator
+      - ../prompts:/app/prompts
     depends_on:
       postgres:
         condition: service_healthy

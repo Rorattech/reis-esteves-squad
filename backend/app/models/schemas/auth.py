@@ -52,12 +52,18 @@ class TokenResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """Representação pública de um usuário — nunca inclui hashed_password."""
+    """Representação pública de um usuário — nunca inclui hashed_password.
+
+    tenant_name não vem de User.tenant_id sozinho — as rotas que retornam
+    este schema precisam carregar/construir esse valor explicitamente (ver
+    app/api/v1/auth.py), nunca inventá-lo.
+    """
 
     model_config = {"from_attributes": True}
 
     id: uuid.UUID
     tenant_id: uuid.UUID
+    tenant_name: str
     email: str
     role: UserRole
     created_at: datetime

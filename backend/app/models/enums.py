@@ -40,3 +40,26 @@ class CaseStatus(str, enum.Enum):
     APPROVED = "approved"
     COMPLETED = "completed"
     ARCHIVED = "archived"
+
+
+class AuditActor(str, enum.Enum):
+    """Quem executou a ação registrada em AuditLog (espelha ActorType em
+    orchestrator/state.py — CLAUDE.md, seção 10).
+    """
+
+    SYSTEM = "system"
+    AGENT = "agent"
+    HUMAN = "human"
+
+
+class ModuleName(str, enum.Enum):
+    """Um dos 6 módulos LangGraph do Squad Digital (espelha ModuleName em
+    orchestrator/state.py — CLAUDE.md, seção 14).
+    """
+
+    INTAKE = "intake"
+    EVIDENCE = "evidence"
+    RESEARCH = "research"
+    STRATEGY = "strategy"
+    DRAFTING = "drafting"
+    REVIEW = "review"

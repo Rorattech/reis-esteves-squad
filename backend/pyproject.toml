@@ -18,6 +18,8 @@ dependencies = [
     "pyjwt>=2.9",
     "bcrypt>=4.2",
     "python-multipart>=0.0.17",
+    "pyyaml>=6.0",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +45,15 @@ target-version = ["py313"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# app/core/db.py cria engine/async_session_factory uma única vez, no import
+# do módulo — todos os testes/fixtures assíncronos precisam compartilhar o
+# mesmo event loop (escopo "session"), senão o SQLAlchemy quebra com
+# "Future attached to a different loop" ao reusar essa engine entre testes.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+# orchestrator/ é irmão de backend/ no repo (ver backend/Dockerfile) — sem
+# isso, `import orchestrator` falha ao rodar pytest de dentro de backend/.
+pythonpath = [".."]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

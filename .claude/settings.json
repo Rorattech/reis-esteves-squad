@@ -10,20 +10,20 @@
         "Bash(npm install:*)",
         "Bash(npm run:*)",
         "Read(**)",
-        "Write(backend/**)",
-        "Write(orchestrator/**)",
-        "Write(frontend/src/**)",
-        "Write(prompts/**)",
-        "Write(infra/**)",
-        "Write(docs/**)"
+        "Edit(backend/**)",
+        "Edit(orchestrator/**)",
+        "Edit(frontend/src/**)",
+        "Edit(prompts/**)",
+        "Edit(infra/**)",
+        "Edit(docs/**)"
       ],
       "deny": [
         "Bash(curl:*)",
         "Bash(wget:*)",
         "Bash(git push:*)",
-        "Write(.env)",
-        "Write(**/*.pem)",
-        "Write(**/*.key)"
+        "Edit(.env)",
+        "Edit(**/*.pem)",
+        "Edit(**/*.key)"
       ]
     }
 }
