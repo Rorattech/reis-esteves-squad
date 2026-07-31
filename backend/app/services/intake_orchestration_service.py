@@ -13,14 +13,6 @@ import time
 import uuid
 from typing import Any
 
-from orchestrator.checkpoints import save_checkpoint
-from orchestrator.graphs.intake import (
-    IntakeContext,
-    build_intake_graph,
-    persist_intake_recommendation,
-)
-from orchestrator.llm import LLMClient
-from orchestrator.state import CaseState
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +21,14 @@ from app.models.case import Case
 from app.models.enums import CaseStatus, ModuleName
 from app.models.schemas.intake import IntakeReviewDecision, IntakeReviewRequest
 from app.services.case_intake_service import get_intake
+from orchestrator.checkpoints import save_checkpoint
+from orchestrator.graphs.intake import (
+    IntakeContext,
+    build_intake_graph,
+    persist_intake_recommendation,
+)
+from orchestrator.llm import LLMClient
+from orchestrator.state import CaseState
 
 _MODEL_USED_MANUAL = "n/a"
 
@@ -68,7 +68,11 @@ def _build_initial_state(*, case: Case, tenant_id: uuid.UUID, narrative: str) ->
         missing_information=[],
         out_of_scope_reason=None,
         documents_requested=[],
+        evidence_records=[],
         evidence_inventory=[],
+        evidence_findings=[],
+        specialist_assessment=None,
+        evidence_outcome=None,
         legal_sources=[],
         strategy_memo=None,
         draft_petition=None,

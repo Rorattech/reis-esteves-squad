@@ -147,6 +147,12 @@ def decode_token(token: str, *, expected_type: TokenType) -> dict[str, Any]:
             token,
             settings.backend_secret_key,
             algorithms=[settings.backend_jwt_algorithm],
+            # PyJWT >= 2.10 rejeita iat "no futuro"; sem leeway, um salto de
+            # relógio para trás (correção NTP da VM do Docker/WSL2 — saltos de
+            # ~40s já observados neste ambiente) invalida tokens recém-emitidos
+            # de forma intermitente. 60s de tolerância cobre essas correções
+            # sem afrouxar a expiração de forma relevante (exp de 15min).
+            leeway=60,
         )
     except jwt.PyJWTError as exc:
         raise InvalidTokenError("Token inválido ou expirado.") from exc

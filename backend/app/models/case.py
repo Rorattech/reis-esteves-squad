@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.case_document import CaseDocument
     from app.models.case_intake import CaseIntake
     from app.models.client import Client
+    from app.models.evidence_file import EvidenceFile
     from app.models.tenant import Tenant
     from app.models.user import User
 
@@ -94,6 +95,9 @@ class Case(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         back_populates="case", cascade="all, delete-orphan"
     )
     documents: Mapped[list["CaseDocument"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan"
+    )
+    evidence_files: Mapped[list["EvidenceFile"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
     audit_logs: Mapped[list["AuditLog"]] = relationship(

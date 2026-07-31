@@ -4,6 +4,11 @@
 import uuid
 
 import pytest
+from sqlalchemy import text
+
+from app.core.db import async_session_factory
+from app.models.case import Case
+from app.models.enums import FraudType, UrgencyLevel
 from orchestrator.checkpoints import load_latest_checkpoint, save_checkpoint
 from orchestrator.graphs.intake import (
     IntakeContext,
@@ -13,11 +18,6 @@ from orchestrator.graphs.intake import (
 )
 from orchestrator.router import route
 from orchestrator.state import CaseState
-from sqlalchemy import text
-
-from app.core.db import async_session_factory
-from app.models.case import Case
-from app.models.enums import FraudType, UrgencyLevel
 from tests.conftest import _SET_TENANT_GUC, TenantFixture
 from tests.llm_stubs import StubLLMClient
 
@@ -36,7 +36,11 @@ def _blank_state(*, case_id: str, tenant_id: str) -> CaseState:
         missing_information=[],
         out_of_scope_reason=None,
         documents_requested=[],
+        evidence_records=[],
         evidence_inventory=[],
+        evidence_findings=[],
+        specialist_assessment=None,
+        evidence_outcome=None,
         legal_sources=[],
         strategy_memo=None,
         draft_petition=None,

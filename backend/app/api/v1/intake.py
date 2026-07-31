@@ -15,10 +15,6 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from orchestrator.checkpoints import load_latest_checkpoint
-from orchestrator.graphs.intake import IntakeValidationError, LLMOutputValidationError
-from orchestrator.llm import LLMClient, LLMNotConfiguredError
-from orchestrator.state import CaseState
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,6 +49,10 @@ from app.services.intake_orchestration_service import (
     review_intake_recommendation,
     run_intake,
 )
+from orchestrator.checkpoints import load_latest_checkpoint
+from orchestrator.graphs.intake import IntakeValidationError, LLMOutputValidationError
+from orchestrator.llm import LLMClient, LLMNotConfiguredError
+from orchestrator.state import CaseState
 
 logger = structlog.get_logger()
 

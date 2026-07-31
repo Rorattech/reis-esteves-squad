@@ -47,6 +47,79 @@ AreaOfLaw = Literal["civil", "family", "criminal", "labor", "consumer", "digital
 """Área do Direito identificada na triagem (espelha CaseArea em
 app/models/enums.py — prompts/digital/intake/triage.md)."""
 
+EvidenceOutcome = Literal["awaiting_human_review", "awaiting_information"]
+"""Estado explícito da etapa de Evidências (módulo 2 — documental/specialist):
+
+- "awaiting_human_review": inventário e leitura técnica concluídos — como
+  todo output de agente (CLAUDE.md, seção 2), é recomendação até um advogado
+  revisar; o caso só avança para research após essa revisão explícita.
+- "awaiting_information": evidências insuficientes para análise — os nós não
+  inventam conteúdo ausente, sinalizam o que falta.
+"""
+
+FindingCategory = Literal["fact", "inference", "missing_info"]
+"""Natureza de um achado probatório (roadmap 3.3 — o sistema distingue
+claramente fato extraído, inferência técnica e ausência de informação)."""
+
+
+class EvidenceRecord(BaseModel):
+    """Entrada bruta de uma evidência para os nós do módulo Evidence.
+
+    Montada pela camada de orquestração a partir de `evidence_files` +
+    `evidence_extractions` (Fases 3.1/3.2) — os nós só leem daqui; nunca
+    acessam banco ou storage diretamente.
+    """
+
+    evidence_id: str
+    filename: str
+    mime_type: str
+    processing_status: str
+    extracted_text: str | None = None
+    extraction_confidence: float | None = None
+    extraction_limitations: str | None = None
+
+
+class EvidenceFinding(BaseModel):
+    """Um achado probatório dos nós documental/specialist (roadmap 3.3).
+
+    Todo achado com category "fact" ou "inference" DEVE apontar
+    `source_evidence_id` para uma evidência original existente — achados sem
+    origem rastreável são rejeitados pelo nó, nunca aceitos (roadmap 3.3:
+    "Cada item deve ser rastreável até uma evidência original"). Lacunas
+    (category "missing_info") são a única exceção: apontam o que NÃO existe.
+    """
+
+    finding_id: str
+    source_evidence_id: str | None = None
+    agent: Literal["documental", "specialist"]
+    category: FindingCategory
+    evidence_type: Literal[
+        "screenshot", "payment_receipt", "fake_profile", "conversation", "url", "document", "other"
+    ]
+    summary: str
+    relevance: Literal["low", "medium", "high"]
+    suggested_use: str
+    gaps: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    requires_human_review: bool = True
+    status: DraftStatus = "DRAFT_PENDING_REVIEW"
+
+
+class SpecialistAssessment(BaseModel):
+    """Leitura técnica da plataforma pelo Especialista Digital (roadmap 3.3).
+
+    Contextualiza as evidências no funcionamento real da plataforma e da
+    modalidade do golpe — hipóteses e recomendações de preservação, nunca
+    conclusão jurídica definitiva (CLAUDE.md, seção 2).
+    """
+
+    platform_context: str
+    platform_failure: str | None = None
+    report_mechanism_analysis: str | None = None
+    preservation_recommendations: list[str] = Field(default_factory=list)
+    hypotheses: list[str] = Field(default_factory=list)
+    status: DraftStatus = "DRAFT_PENDING_REVIEW"
+
 
 class EvidenceItem(BaseModel):
     """Um item de evidência digital classificado no módulo Evidence Matrix
@@ -187,7 +260,19 @@ class CaseState(TypedDict):
     """Motivo pelo qual o coordinator marcou o caso como fora do escopo do
     Squad Digital — só preenchido quando intake_outcome == "blocked"."""
     documents_requested: list[str]
+    evidence_records: list[EvidenceRecord]
+    """Evidências brutas (arquivos + textos extraídos das Fases 3.1/3.2)
+    carregadas pela orquestração antes de invocar o módulo Evidence — os nós
+    nunca acessam banco/storage diretamente."""
     evidence_inventory: list[EvidenceItem]
+    evidence_findings: list[EvidenceFinding]
+    """Achados probatórios dos nós documental/specialist — cada um rastreável
+    à evidência de origem (roadmap 3.3)."""
+    specialist_assessment: SpecialistAssessment | None
+    """Leitura técnica da plataforma pelo Especialista Digital (None até o
+    módulo Evidence rodar)."""
+    evidence_outcome: EvidenceOutcome | None
+    """Resultado mais recente do módulo Evidence — ver `EvidenceOutcome`."""
     legal_sources: list[LegalSource]
     strategy_memo: StrategyMemo | None
     draft_petition: DraftPetition | None

@@ -14,11 +14,17 @@ from app.models.enums import (
     CaseArea,
     CaseStatus,
     DocumentChecklistStatus,
+    EvidenceProcessingStatus,
+    ExtractionOutcome,
+    ExtractionReviewVerdict,
     FraudType,
     ModuleName,
     UrgencyLevel,
     UserRole,
 )
+from app.models.evidence_extraction import EvidenceExtraction, EvidenceExtractionReview
+from app.models.evidence_file import EvidenceFile
+from app.models.evidence_finding import EvidenceFindingRecord
 from app.models.tenant import Tenant
 from app.models.user import User
 
@@ -31,6 +37,10 @@ __all__ = [
     "CaseIntake",
     "CaseDocument",
     "CaseCheckpoint",
+    "EvidenceFile",
+    "EvidenceExtraction",
+    "EvidenceExtractionReview",
+    "EvidenceFindingRecord",
     "AuditLog",
     "UserRole",
     "FraudType",
@@ -38,6 +48,9 @@ __all__ = [
     "CaseStatus",
     "CaseArea",
     "DocumentChecklistStatus",
+    "EvidenceProcessingStatus",
+    "ExtractionOutcome",
+    "ExtractionReviewVerdict",
     "AuditActor",
     "ModuleName",
 ]

@@ -19,6 +19,12 @@ import type {
   CaseIntakeCreateInput,
   CaseIntakeUpdateInput,
   CaseUpdateInput,
+  EvidenceAnalysisResult,
+  EvidenceAnalysisReviewInput,
+  EvidenceExtraction,
+  EvidenceFile,
+  ExtractionReview,
+  ExtractionReviewInput,
   IntakeResult,
   IntakeReviewInput,
   TokenResponse,
@@ -87,16 +93,19 @@ function refreshAccessTokenOnce(): Promise<string | null> {
   return inflightRefresh;
 }
 
-async function request<T>(
+async function rawRequest(
   path: string,
   options: RequestInit = {},
   { allowRefreshRetry = true }: { allowRefreshRetry?: boolean } = {},
-): Promise<T> {
+): Promise<Response> {
   const accessToken = useAuthStore.getState().accessToken;
+  // FormData define o próprio Content-Type (multipart + boundary) — forçar
+  // application/json quebraria o upload de evidências.
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...options.headers,
     },
@@ -105,7 +114,7 @@ async function request<T>(
   if (response.status === 401 && allowRefreshRetry) {
     const newAccessToken = await refreshAccessTokenOnce();
     if (newAccessToken) {
-      return request<T>(path, options, { allowRefreshRetry: false });
+      return rawRequest(path, options, { allowRefreshRetry: false });
     }
     useAuthStore.getState().clear();
     throw new ApiError(401, "Sessão expirada. Faça login novamente.");
@@ -114,7 +123,15 @@ async function request<T>(
   if (!response.ok) {
     throw new ApiError(response.status, await extractErrorMessage(response));
   }
+  return response;
+}
 
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  retryOptions: { allowRefreshRetry?: boolean } = {},
+): Promise<T> {
+  const response = await rawRequest(path, options, retryOptions);
   if (response.status === 204) {
     return undefined as T;
   }
@@ -215,5 +232,83 @@ export const api = {
 
   async getAuditLog(caseId: string): Promise<AuditLogEntry[]> {
     return request<AuditLogEntry[]>(`/cases/${caseId}/audit-log`);
+  },
+
+  // --- Evidências (Fase 3) ---------------------------------------------------
+
+  async listEvidence(caseId: string): Promise<EvidenceFile[]> {
+    return request<EvidenceFile[]>(`/cases/${caseId}/evidence`);
+  },
+
+  async getEvidence(caseId: string, evidenceId: string): Promise<EvidenceFile> {
+    return request<EvidenceFile>(`/cases/${caseId}/evidence/${evidenceId}`);
+  },
+
+  /** Upload multipart — o backend valida MIME, tamanho e conteúdo; o original é preservado intacto. */
+  async uploadEvidence(caseId: string, file: File, origin = "upload_portal"): Promise<EvidenceFile> {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("origin", origin);
+    return request<EvidenceFile>(`/cases/${caseId}/evidence`, { method: "POST", body });
+  },
+
+  /**
+   * Baixa o conteúdo original por rota autenticada (nunca existe URL pública
+   * permanente para uma evidência — CLAUDE.md, seção 12). Cada acesso gera
+   * entrada de auditoria no backend (cadeia de custódia).
+   */
+  async downloadEvidence(caseId: string, evidenceId: string): Promise<Blob> {
+    const response = await rawRequest(`/cases/${caseId}/evidence/${evidenceId}/download`);
+    return response.blob();
+  },
+
+  /** Dispara (re)processamento da extração — 409 se já estiver em processamento. */
+  async processEvidence(caseId: string, evidenceId: string): Promise<EvidenceFile> {
+    return request<EvidenceFile>(`/cases/${caseId}/evidence/${evidenceId}/process`, {
+      method: "POST",
+    });
+  },
+
+  async listEvidenceExtractions(
+    caseId: string,
+    evidenceId: string,
+  ): Promise<EvidenceExtraction[]> {
+    return request<EvidenceExtraction[]>(`/cases/${caseId}/evidence/${evidenceId}/extractions`);
+  },
+
+  /** Revisão humana do texto extraído — cria um registro auditado, nunca substitui o texto. */
+  async reviewEvidenceExtraction(
+    caseId: string,
+    evidenceId: string,
+    extractionId: string,
+    input: ExtractionReviewInput,
+  ): Promise<ExtractionReview> {
+    return request<ExtractionReview>(
+      `/cases/${caseId}/evidence/${evidenceId}/extractions/${extractionId}/review`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  /** Executa documental + specialist (orchestrator/graphs/evidence.py) para o caso. */
+  async runEvidenceAnalysis(caseId: string): Promise<EvidenceAnalysisResult> {
+    return request<EvidenceAnalysisResult>(`/cases/${caseId}/evidence/analysis/run`, {
+      method: "POST",
+    });
+  },
+
+  /** 404 se o caso não existir OU se a análise ainda não tiver sido executada. */
+  async getEvidenceAnalysis(caseId: string): Promise<EvidenceAnalysisResult> {
+    return request<EvidenceAnalysisResult>(`/cases/${caseId}/evidence/analysis/result`);
+  },
+
+  /** 409 se não houver análise de evidências pendente de revisão. */
+  async reviewEvidenceAnalysis(
+    caseId: string,
+    input: EvidenceAnalysisReviewInput,
+  ): Promise<EvidenceAnalysisResult> {
+    return request<EvidenceAnalysisResult>(`/cases/${caseId}/evidence/analysis/review`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 };

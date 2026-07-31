@@ -14,7 +14,9 @@ tenant_isolation trata ambos os casos (NULL e '') como "nenhum tenant" via
 NULLIF antes do cast ::uuid (ver migration 3abdfd696724).
 """
 
+import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import Request
 from sqlalchemy import text
@@ -39,6 +41,32 @@ _SET_BOOTSTRAP_GUC = text(
     "SELECT set_config('app.current_tenant', '', false), "
     "set_config('app.bootstrap', 'true', false)"
 )
+
+
+_SET_TENANT_GUC = text(
+    "SELECT set_config('app.current_tenant', :tenant_id, false), "
+    "set_config('app.bootstrap', 'false', false)"
+)
+
+
+@asynccontextmanager
+async def tenant_scoped_session(tenant_id: uuid.UUID) -> AsyncIterator[AsyncSession]:
+    """Abre uma sessão escopada a um tenant fora do ciclo de uma request HTTP.
+
+    Uso restrito a tarefas de background (ex.: pipeline de extração de
+    evidências — Fase 3.2), onde a sessão do TenantMiddleware já foi fechada.
+    O tenant_id DEVE vir de um contexto autenticado anterior — nunca de input
+    do usuário (CLAUDE.md, seção 7).
+
+    Args:
+        tenant_id: Tenant dono dos dados que a tarefa vai ler/escrever.
+
+    Yields:
+        Sessão SQLAlchemy assíncrona com `app.current_tenant` configurado.
+    """
+    async with async_session_factory() as session:
+        await session.execute(_SET_TENANT_GUC, {"tenant_id": str(tenant_id)})
+        yield session
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

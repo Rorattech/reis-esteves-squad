@@ -10,6 +10,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONPATH=/app
 
+# OCR e extração de PDF (Fase 3.2): tesseract com pacote de português para
+# imagens/PDF escaneado, poppler para rasterizar PDF (pdf2image).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        tesseract-ocr \
+        tesseract-ocr-por \
+        poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 # Build context é a raiz do repo (ver infra/docker-compose.yml) — não
 # backend/ — porque backend/app/core/audit.py importa orchestrator/state.py
 # (CaseState, AuditEntry) e os dois são pacotes irmãos no repo, não um

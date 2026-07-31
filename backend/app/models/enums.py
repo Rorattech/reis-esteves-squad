@@ -85,3 +85,41 @@ class DocumentChecklistStatus(str, enum.Enum):
     RECEIVED = "received"
     PENDING = "pending"
     WAIVED = "waived"
+
+
+class EvidenceProcessingStatus(str, enum.Enum):
+    """Status de processamento de um arquivo de evidência (Fase 3 — módulo evidence).
+
+    received: upload concluído, ainda sem extração de conteúdo (Fase 3.2).
+    processing: pipeline de OCR/transcrição em execução.
+    processed: extração concluída (com sucesso ou com baixa confiança sinalizada).
+    failed: pipeline de extração falhou — arquivo original permanece intacto.
+    """
+
+    RECEIVED = "received"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
+    FAILED = "failed"
+
+
+class ExtractionOutcome(str, enum.Enum):
+    """Resultado de uma execução do pipeline de extração (Fase 3.2).
+
+    succeeded: texto extraído gravado como artefato derivado (nunca no original).
+    failed: extração falhou — o original permanece intacto e o erro é rastreável.
+    """
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class ExtractionReviewVerdict(str, enum.Enum):
+    """Veredito da revisão humana sobre um texto extraído (Fase 3.5).
+
+    confirmed: o advogado conferiu o derivado contra o original.
+    extraction_error: o derivado contém erro de OCR/extração — a correção é um
+    registro auditado, nunca uma substituição silenciosa do texto.
+    """
+
+    CONFIRMED = "confirmed"
+    EXTRACTION_ERROR = "extraction_error"

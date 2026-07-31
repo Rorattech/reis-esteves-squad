@@ -199,6 +199,119 @@ export interface IntakeReviewInput {
   matter?: string;
 }
 
+/** Espelha EvidenceProcessingStatus (backend/app/models/enums.py) — Fase 3. */
+export type EvidenceProcessingStatus = "received" | "processing" | "processed" | "failed";
+
+/** Espelha EvidenceFileResponse (backend/app/models/schemas/evidence_file.py). */
+export interface EvidenceFile {
+  id: string;
+  tenant_id: string;
+  case_id: string;
+  uploaded_by: string;
+  original_filename: string;
+  mime_type: string;
+  extension: string;
+  size_bytes: number;
+  sha256_hash: string;
+  origin: string;
+  status: EvidenceProcessingStatus;
+  duplicate_of_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  is_duplicate: boolean;
+}
+
+/** Espelha ExtractionOutcome (backend/app/models/enums.py). */
+export type ExtractionOutcome = "succeeded" | "failed";
+
+/** Espelha ExtractionReviewVerdict (backend/app/models/enums.py). */
+export type ExtractionReviewVerdict = "confirmed" | "extraction_error";
+
+/** Espelha ExtractionReviewResponse (backend/app/models/schemas/evidence_extraction.py). */
+export interface ExtractionReview {
+  id: string;
+  extraction_id: string;
+  reviewer_id: string;
+  verdict: ExtractionReviewVerdict;
+  note: string | null;
+  created_at: string;
+}
+
+/** Espelha ExtractionReviewCreate (backend/app/models/schemas/evidence_extraction.py). */
+export interface ExtractionReviewInput {
+  verdict: ExtractionReviewVerdict;
+  note?: string | null;
+}
+
+/**
+ * Espelha EvidenceExtractionResponse (backend/app/models/schemas/evidence_extraction.py).
+ * `extracted_text` é sempre conteúdo DERIVADO (OCR/decodificação) — a
+ * interface nunca o apresenta como prova perfeita; `confidence` e
+ * `limitations` devem ser exibidos junto (roadmap 3.2/3.5).
+ */
+export interface EvidenceExtraction {
+  id: string;
+  evidence_id: string;
+  kind: string;
+  outcome: ExtractionOutcome;
+  extracted_text: string | null;
+  confidence: number | null;
+  limitations: string | null;
+  tool_name: string;
+  tool_version: string;
+  input_sha256: string;
+  output_sha256: string | null;
+  duration_ms: number;
+  error_message: string | null;
+  created_at: string;
+  reviews: ExtractionReview[];
+}
+
+/** Espelha EvidenceFindingResponse (backend/app/models/schemas/evidence_analysis.py). */
+export interface EvidenceFinding {
+  id: string;
+  evidence_id: string | null;
+  agent: string;
+  category: "fact" | "inference" | "missing_info";
+  evidence_type: string;
+  summary: string;
+  relevance: "low" | "medium" | "high";
+  suggested_use: string;
+  gaps: string[];
+  confidence: number;
+  status: string;
+  created_at: string;
+}
+
+/** Espelha SpecialistAssessmentResponse (backend/app/models/schemas/evidence_analysis.py). */
+export interface SpecialistAssessment {
+  platform_context: string;
+  platform_failure: string | null;
+  report_mechanism_analysis: string | null;
+  preservation_recommendations: string[];
+  hypotheses: string[];
+  status: string;
+}
+
+/** Espelha EvidenceAnalysisResultResponse (backend/app/models/schemas/evidence_analysis.py). */
+export interface EvidenceAnalysisResult {
+  case_id: string;
+  evidence_outcome: "awaiting_human_review" | "awaiting_information" | null;
+  findings: EvidenceFinding[];
+  specialist_assessment: SpecialistAssessment | null;
+  documents_requested: string[];
+  human_review_required: boolean;
+  status: CaseStatus;
+  current_module: ModuleName;
+}
+
+/** Espelha EvidenceReviewRequest (backend/app/models/schemas/evidence_analysis.py). */
+export interface EvidenceAnalysisReviewInput {
+  decision: "approve" | "return_for_information";
+  notes?: string | null;
+}
+
 /** Espelha AuditActor (backend/app/models/enums.py). */
 export type AuditActor = "system" | "agent" | "human";
 

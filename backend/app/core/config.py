@@ -28,9 +28,19 @@ class Settings(BaseSettings):
     backend_max_upload_mb: int = 50
     backend_rate_limit_per_minute: int = 60
 
+    # Diretório privado (nunca servido como estático — ver app/core/storage.py
+    # e docs/adr/0001-evidence-storage-local-filesystem.md) onde os originais
+    # de evidência são gravados uma única vez, fora do bind mount de código
+    # (ver volume "evidence_storage" em infra/docker-compose.yml).
+    evidence_storage_dir: str = "/app/storage/evidence"
+
     # Nome do modelo usado pelos nós LangGraph do módulo Intake (CLAUDE.md,
     # seção 15 — nunca hardcoded no nó chamador, sempre via esta constante).
     intake_llm_model: str = "claude-sonnet-5"
+
+    # Nome do modelo usado pelos nós LangGraph do módulo Evidence (documental
+    # e specialist — Fase 3.3).
+    evidence_llm_model: str = "claude-sonnet-5"
 
     database_url: str
     redis_url: str

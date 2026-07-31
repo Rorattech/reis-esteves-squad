@@ -21,11 +21,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from app.core.audit import create_audit_entry
-from app.core.config import settings
-from app.core.prompts import build_prompt_audit_metadata, load_prompt_bundle
-from app.models.case import Case
-from app.models.enums import CaseArea, CaseStatus, FraudType, UrgencyLevel
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
@@ -33,6 +28,11 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import create_audit_entry
+from app.core.config import settings
+from app.core.prompts import build_prompt_audit_metadata, load_prompt_bundle
+from app.models.case import Case
+from app.models.enums import CaseArea, CaseStatus, FraudType, UrgencyLevel
 from orchestrator.llm import LLMClient, LLMNotConfiguredError, StructuredLLMResult
 from orchestrator.state import CaseState, IntakeOutcome
 

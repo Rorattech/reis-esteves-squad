@@ -22,8 +22,11 @@ from orchestrator.state import (
     AuditEntry,
     CaseState,
     DraftPetition,
+    EvidenceFinding,
     EvidenceItem,
+    EvidenceRecord,
     LegalSource,
+    SpecialistAssessment,
     StrategyMemo,
 )
 
@@ -39,9 +42,20 @@ def _serialize_state(state: CaseState) -> dict[str, Any]:
     """
     return {
         **state,
+        "evidence_records": [
+            item.model_dump(mode="json") for item in state["evidence_records"]
+        ],
         "evidence_inventory": [
             item.model_dump(mode="json") for item in state["evidence_inventory"]
         ],
+        "evidence_findings": [
+            item.model_dump(mode="json") for item in state["evidence_findings"]
+        ],
+        "specialist_assessment": (
+            state["specialist_assessment"].model_dump(mode="json")
+            if state["specialist_assessment"]
+            else None
+        ),
         "legal_sources": [source.model_dump(mode="json") for source in state["legal_sources"]],
         "strategy_memo": (
             state["strategy_memo"].model_dump(mode="json") if state["strategy_memo"] else None
@@ -65,9 +79,23 @@ def _deserialize_state(raw: dict[str, Any]) -> CaseState:
     return CaseState(
         **{
             **raw,
+            # .get(...) nos campos do módulo Evidence: checkpoints gravados
+            # antes da Fase 3.3 não os têm — deserializar com defaults vazios.
+            "evidence_records": [
+                EvidenceRecord.model_validate(item) for item in raw.get("evidence_records", [])
+            ],
             "evidence_inventory": [
                 EvidenceItem.model_validate(item) for item in raw["evidence_inventory"]
             ],
+            "evidence_findings": [
+                EvidenceFinding.model_validate(item) for item in raw.get("evidence_findings", [])
+            ],
+            "specialist_assessment": (
+                SpecialistAssessment.model_validate(raw["specialist_assessment"])
+                if raw.get("specialist_assessment")
+                else None
+            ),
+            "evidence_outcome": raw.get("evidence_outcome"),
             "legal_sources": [LegalSource.model_validate(item) for item in raw["legal_sources"]],
             "strategy_memo": (
                 StrategyMemo.model_validate(raw["strategy_memo"]) if raw["strategy_memo"] else None

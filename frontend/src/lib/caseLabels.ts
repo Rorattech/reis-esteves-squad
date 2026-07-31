@@ -3,6 +3,7 @@ import type {
   CaseArea,
   CaseStatus,
   DocumentChecklistStatus,
+  EvidenceProcessingStatus,
   FraudType,
   IntakeOutcome,
   UrgencyLevel,
@@ -53,6 +54,27 @@ export const INTAKE_OUTCOME_LABELS: Record<IntakeOutcome, string> = {
   blocked: "Fora do escopo do Squad Digital",
   awaiting_information: "Aguardando mais informações",
   awaiting_human_review: "Aguardando revisão humana",
+};
+
+/** Espelha EvidenceProcessingStatus (backend/app/models/enums.py) — Fase 3. */
+export const EVIDENCE_STATUS_LABELS: Record<EvidenceProcessingStatus, string> = {
+  received: "Recebido",
+  processing: "Processando",
+  processed: "Processado",
+  failed: "Falhou",
+};
+
+/** Natureza de um achado probatório (roadmap 3.3 — fato × inferência × lacuna). */
+export const FINDING_CATEGORY_LABELS: Record<"fact" | "inference" | "missing_info", string> = {
+  fact: "Fato extraído",
+  inference: "Inferência técnica",
+  missing_info: "Informação pendente",
+};
+
+export const FINDING_RELEVANCE_LABELS: Record<"low" | "medium" | "high", string> = {
+  low: "Baixa",
+  medium: "Média",
+  high: "Alta",
 };
 
 export const AUDIT_ACTOR_LABELS: Record<AuditActor, string> = {

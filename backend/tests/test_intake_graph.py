@@ -7,6 +7,12 @@ saída do modelo — sempre com o LLMClient stubado (nunca uma chamada real).
 
 import pytest
 from langgraph.runtime import Runtime
+from sqlalchemy import select, text
+
+from app.core.db import async_session_factory
+from app.models.audit_log import AuditLog
+from app.models.case import Case
+from app.models.enums import CaseArea, CaseStatus, FraudType
 from orchestrator.graphs.intake import (
     IntakeContext,
     IntakeValidationError,
@@ -19,12 +25,6 @@ from orchestrator.graphs.intake import (
 )
 from orchestrator.llm import LLMNotConfiguredError
 from orchestrator.state import CaseState
-from sqlalchemy import select, text
-
-from app.core.db import async_session_factory
-from app.models.audit_log import AuditLog
-from app.models.case import Case
-from app.models.enums import CaseArea, CaseStatus, FraudType
 from tests.conftest import _SET_TENANT_GUC, TenantFixture
 from tests.llm_stubs import StubLLMClient
 
@@ -117,7 +117,11 @@ def _blank_state(*, case_id: str, tenant_id: str, narrative: str = "Relato de te
         missing_information=[],
         out_of_scope_reason=None,
         documents_requested=[],
+        evidence_records=[],
         evidence_inventory=[],
+        evidence_findings=[],
+        specialist_assessment=None,
+        evidence_outcome=None,
         legal_sources=[],
         strategy_memo=None,
         draft_petition=None,
@@ -410,6 +414,7 @@ def test_llm_not_configured_raises_explicit_error() -> None:
 
 def test_route_after_coordinator_advances_to_triage_only_when_completed() -> None:
     from langgraph.graph import END
+
     from orchestrator.graphs.intake import _route_after_coordinator
 
     state = _blank_state(case_id="c", tenant_id="t")
