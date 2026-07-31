@@ -2,14 +2,14 @@
 
 import uuid
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.core.audit import audit_entry_to_orm, create_audit_entry
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.models.audit_log import AuditLog
 from app.models.case import Case
 from app.models.enums import AuditActor, FraudType, ModuleName, UrgencyLevel
-from tests.conftest import _SET_TENANT_GUC, TenantFixture
+from tests.conftest import TenantFixture
 
 
 def test_create_audit_entry_hashes_input_and_output_never_stores_raw_content() -> None:
@@ -81,7 +81,7 @@ def test_audit_entry_to_orm_maps_fields_correctly() -> None:
 
 async def test_audit_entry_persists_to_audit_logs_table(tenant: TenantFixture) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         case = Case(
             tenant_id=tenant.tenant_id,
             user_id=tenant.user_id,

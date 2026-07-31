@@ -4,9 +4,8 @@
 import uuid
 
 import pytest
-from sqlalchemy import text
 
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.models.case import Case
 from app.models.enums import FraudType, UrgencyLevel
 from orchestrator.checkpoints import load_latest_checkpoint, save_checkpoint
@@ -18,7 +17,7 @@ from orchestrator.graphs.intake import (
 )
 from orchestrator.router import route
 from orchestrator.state import CaseState
-from tests.conftest import _SET_TENANT_GUC, TenantFixture
+from tests.conftest import TenantFixture
 from tests.llm_stubs import StubLLMClient
 
 
@@ -144,7 +143,7 @@ async def test_checkpoint_round_trip_preserves_case_state(
     tenant: TenantFixture,
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         case = Case(
             tenant_id=tenant.tenant_id,
             user_id=tenant.user_id,
@@ -166,7 +165,7 @@ async def test_checkpoint_round_trip_preserves_case_state(
         await session.commit()
 
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         loaded = await load_latest_checkpoint(session, tenant_id=tenant.tenant_id, case_id=case.id)
 
         assert loaded is not None
@@ -179,7 +178,7 @@ async def test_load_latest_checkpoint_returns_none_when_absent(
     tenant: TenantFixture,
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         result = await load_latest_checkpoint(
             session, tenant_id=tenant.tenant_id, case_id=uuid.uuid4()
         )

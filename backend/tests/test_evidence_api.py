@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.core.security import hash_password
 from app.core.storage import EvidenceStorage, get_evidence_storage
 from app.main import app
 from app.models.audit_log import AuditLog
 from app.models.enums import UserRole
 from app.models.user import User
-from tests.conftest import _SET_TENANT_GUC, TenantFixture, login
+from tests.conftest import TenantFixture, login
 
 _PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 _TXT_BYTES = "conversa exportada do whatsapp\ncliente: fui vitima de golpe".encode()
@@ -53,7 +53,7 @@ async def _upload(
 
 async def _audit_entries(tenant_id: uuid.UUID, evidence_id: str) -> list[AuditLog]:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_id)})
+        scope_session_to_tenant(session, tenant_id)
         rows = await session.scalars(
             select(AuditLog).where(
                 AuditLog.tenant_id == tenant_id,
@@ -205,7 +205,7 @@ async def test_viewer_cannot_upload_but_can_read_inventory(
 
     # Viewer do MESMO tenant: lê o inventário, mas não envia nem baixa o original.
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         session.add(
             User(
                 tenant_id=tenant_with_case.tenant_id,

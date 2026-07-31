@@ -5,14 +5,18 @@ import uuid
 from httpx import AsyncClient
 from sqlalchemy import select, text
 
-from app.core.db import async_session_factory
+from app.core.db import (
+    async_session_factory,
+    scope_session_to_auth_bootstrap,
+    scope_session_to_tenant,
+)
 from app.models.tenant import Tenant
-from tests.conftest import _RESET_GUCS, _SET_TENANT_GUC, TenantFixture, login
+from tests.conftest import TenantFixture, login
 
 
 async def _delete_tenant_by_id(tenant_id: str) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_RESET_GUCS))
+        scope_session_to_auth_bootstrap(session)
         await session.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": tenant_id})
         await session.commit()
 
@@ -42,7 +46,7 @@ async def test_register_rejects_duplicate_slug(
     api_client: AsyncClient, tenant: TenantFixture
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         existing_slug = (
             await session.scalars(select(Tenant.slug).where(Tenant.id == tenant.tenant_id))
         ).one()

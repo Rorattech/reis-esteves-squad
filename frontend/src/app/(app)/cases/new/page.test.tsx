@@ -89,4 +89,75 @@ describe("NewCasePage", () => {
     expect(await screen.findByText("Usuário não tem papel autorizado.")).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
   });
+
+  describe("token do cliente, área e matéria", () => {
+    const CLIENT_TOKEN = "3f2a9c10-4b7e-4d51-9a2f-8e0c1d6b5a44";
+
+    async function fillRequiredFields() {
+      await userEvent.type(screen.getByLabelText("Plataforma envolvida"), "Shopee");
+      await userEvent.selectOptions(screen.getByLabelText("Modalidade do golpe"), "marketplace");
+    }
+
+    it("envia os três campos quando preenchidos", async () => {
+      createCaseMock.mockResolvedValue(makeCase());
+
+      render(<NewCasePage />);
+      await fillRequiredFields();
+      await userEvent.type(screen.getByLabelText(/Token do cliente/), CLIENT_TOKEN);
+      await userEvent.selectOptions(screen.getByLabelText(/^Área/), "digital");
+      await userEvent.type(screen.getByLabelText(/Matéria/), "Compra não entregue");
+      await userEvent.click(screen.getByRole("button", { name: "Criar caso" }));
+
+      await waitFor(() =>
+        expect(createCaseMock).toHaveBeenCalledWith({
+          platform: "Shopee",
+          fraud_type: "marketplace",
+          urgency: "medium",
+          client_id: CLIENT_TOKEN,
+          area: "digital",
+          matter: "Compra não entregue",
+        }),
+      );
+    });
+
+    it("rejeita um token de cliente fora do formato esperado, sem chamar a API", async () => {
+      render(<NewCasePage />);
+      await fillRequiredFields();
+      await userEvent.type(screen.getByLabelText(/Token do cliente/), "cliente-123");
+      await userEvent.click(screen.getByRole("button", { name: "Criar caso" }));
+
+      expect(
+        await screen.findByText(
+          "Token do cliente inválido — use o identificador completo do cliente.",
+        ),
+      ).toBeInTheDocument();
+      expect(createCaseMock).not.toHaveBeenCalled();
+    });
+
+    it("omite os campos opcionais em branco do payload em vez de mandar string vazia", async () => {
+      createCaseMock.mockResolvedValue(makeCase());
+
+      render(<NewCasePage />);
+      await fillRequiredFields();
+      await userEvent.click(screen.getByRole("button", { name: "Criar caso" }));
+
+      await waitFor(() => expect(createCaseMock).toHaveBeenCalled());
+      const payload = createCaseMock.mock.calls[0][0];
+      expect(payload).not.toHaveProperty("client_id");
+      expect(payload).not.toHaveProperty("area");
+      expect(payload).not.toHaveProperty("matter");
+    });
+
+    it("mostra a mensagem do backend quando o cliente não existe neste escritório", async () => {
+      createCaseMock.mockRejectedValue(new ApiError(404, "Cliente não encontrado."));
+
+      render(<NewCasePage />);
+      await fillRequiredFields();
+      await userEvent.type(screen.getByLabelText(/Token do cliente/), CLIENT_TOKEN);
+      await userEvent.click(screen.getByRole("button", { name: "Criar caso" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Cliente não encontrado.");
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+  });
 });

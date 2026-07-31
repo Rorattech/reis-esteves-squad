@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import audit_entry_to_orm, create_audit_entry
 from app.models.case import Case
 from app.models.enums import CaseStatus, ModuleName
-from app.models.schemas.intake import IntakeReviewDecision, IntakeReviewRequest
+from app.models.schemas.intake import (
+    CaseStageAdvanceRequest,
+    IntakeReviewDecision,
+    IntakeReviewRequest,
+)
 from app.services.case_intake_service import get_intake
 from orchestrator.checkpoints import save_checkpoint
 from orchestrator.graphs.intake import (
@@ -39,6 +43,10 @@ class IntakeNotReadyError(Exception):
 
 class IntakeReviewConflictError(Exception):
     """Levantada quando não há recomendação pendente de revisão para o caso."""
+
+
+class StageAdvanceConflictError(Exception):
+    """Levantada quando o caso não está no módulo intake e portanto não tem o que avançar."""
 
 
 async def _get_case_for_tenant(
@@ -233,6 +241,90 @@ async def review_intake_recommendation(
         # caso (docs/roadmap_mvp_squad_digital.md, 2.6), nunca dado pessoal
         # do cliente.
         metadata={"decision": payload.decision.value, "notes": payload.notes},
+    )
+    session.add(audit_entry_to_orm(entry, tenant_id=tenant_id, case_id=case_id))
+
+    await session.commit()
+    await session.refresh(case)
+    return case
+
+
+async def advance_case_to_evidence(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    case_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    payload: CaseStageAdvanceRequest,
+) -> Case | None:
+    """Avança o caso da abertura (módulo intake) para evidências por decisão humana.
+
+    Caminho para os casos em que a triagem assistida por IA não produziu (ou
+    não podia produzir) uma recomendação a revisar — por exemplo quando
+    nenhum provedor de IA está configurado no ambiente, situação em que
+    `POST .../intake/run` responde 503 e o caso jamais chega a
+    `PENDING_APPROVAL`. Sem esta rota o caso ficaria preso em intake para
+    sempre, inclusive para admin.
+
+    Não é uma decisão automática nem uma aprovação de conteúdo jurídico
+    (CLAUDE.md, seção 2): é o advogado assumindo explicitamente que a
+    abertura do caso está completa. Fica registrado em audit_logs como ação
+    humana, com `ai_triage_reviewed=False` para deixar claro no histórico que
+    nenhuma recomendação de IA foi revisada aqui.
+
+    Args:
+        session: Sessão do banco já escopada por tenant.
+        tenant_id: Tenant autenticado da request.
+        case_id: Caso a avançar.
+        actor_id: ID do usuário autenticado que está avançando o caso.
+        payload: Justificativa opcional do avanço.
+
+    Returns:
+        O `Case` atualizado, ou None se não existir neste tenant.
+
+    Raises:
+        StageAdvanceConflictError: Se o caso já tiver saído do módulo intake.
+        IntakeNotReadyError: Se o caso ainda não tiver relato inicial — o
+            módulo de evidências trabalha sobre o relato, então avançar sem
+            ele deixaria a próxima etapa sem contexto nenhum.
+    """
+    started_at = time.monotonic()
+    case = await _get_case_for_tenant(session, tenant_id, case_id)
+    if case is None:
+        return None
+    if case.current_module != ModuleName.INTAKE:
+        raise StageAdvanceConflictError(
+            "Este caso já saiu da abertura de caso — não há etapa de abertura a concluir."
+        )
+
+    intake = await get_intake(session, tenant_id=tenant_id, case_id=case_id)
+    if intake is None:
+        raise IntakeNotReadyError(
+            "Registre o relato inicial antes de avançar o caso para Evidências."
+        )
+
+    before = _case_classification_snapshot(case)
+
+    case.current_module = ModuleName.EVIDENCE
+    case.status = CaseStatus.IN_PROGRESS
+    case.human_review_required = False
+
+    after = _case_classification_snapshot(case)
+
+    entry = create_audit_entry(
+        actor_id=str(actor_id),
+        action="avanço manual da abertura de caso para evidências",
+        module="intake",
+        input_data={"before": before},
+        output_data=after,
+        model_used=_MODEL_USED_MANUAL,
+        tokens_used=0,
+        duration_ms=int((time.monotonic() - started_at) * 1000),
+        actor="human",
+        # notes fica em claro (não hasheado), como na revisão da triagem: é a
+        # justificativa do advogado e precisa ficar legível no histórico do
+        # caso — nunca dado pessoal do cliente.
+        metadata={"notes": payload.notes, "ai_triage_reviewed": False},
     )
     session.add(audit_entry_to_orm(entry, tenant_id=tenant_id, case_id=case_id))
 

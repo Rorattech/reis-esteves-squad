@@ -7,16 +7,11 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { FRAUD_TYPE_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
+import { CASE_AREA_LABELS, FRAUD_TYPE_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
 import { ApiError, api } from "@/services/api";
-import type { FraudType, UrgencyLevel } from "@/types/api";
+import type { CaseArea, FraudType, UrgencyLevel } from "@/types/api";
 
-/**
- * Espelha CaseCreate (backend/app/models/schemas/case.py) — só os campos
- * que este formulário preenche. client_id/area/matter existem no schema
- * real, mas não há endpoint de cliente nem tela de triagem ainda (ver
- * types/api.ts::CaseCreateInput).
- */
+/** Espelha CaseCreate (backend/app/models/schemas/case.py). */
 const caseCreateSchema = z.object({
   platform: z
     .string()
@@ -27,12 +22,26 @@ const caseCreateSchema = z.object({
     message: "Selecione a modalidade do golpe.",
   }),
   urgency: z.enum(["low", "medium", "high", "critical"]).optional(),
+  // client_id/area/matter são opcionais no backend: podem não ser conhecidos
+  // na abertura e serem preenchidos depois, pela triagem ou pela tela de
+  // edição do caso. O formato do token é validado aqui; a existência do
+  // cliente neste tenant, só o backend pode confirmar (404 "Cliente não
+  // encontrado.").
+  client_id: z
+    .string()
+    .trim()
+    .uuid("Token do cliente inválido — use o identificador completo do cliente.")
+    .optional()
+    .or(z.literal("")),
+  area: z.enum(["civil", "family", "criminal", "labor", "consumer", "digital"]).optional().or(z.literal("")),
+  matter: z.string().trim().max(255, "Máximo de 255 caracteres.").optional(),
 });
 
 type CaseCreateFormValues = z.infer<typeof caseCreateSchema>;
 
 const FRAUD_TYPE_OPTIONS = Object.entries(FRAUD_TYPE_LABELS) as [FraudType, string][];
 const URGENCY_OPTIONS = Object.entries(URGENCY_LABELS) as [UrgencyLevel, string][];
+const AREA_OPTIONS = Object.entries(CASE_AREA_LABELS) as [CaseArea, string][];
 
 export default function NewCasePage() {
   const router = useRouter();
@@ -47,7 +56,17 @@ export default function NewCasePage() {
   async function onSubmit(values: CaseCreateFormValues) {
     setFormError(null);
     try {
-      const created = await api.createCase(values);
+      // Campos opcionais em branco são omitidos do payload: enviar "" faria o
+      // backend rejeitar com 422 (client_id espera UUID, area espera um valor
+      // do enum CaseArea).
+      const created = await api.createCase({
+        platform: values.platform,
+        fraud_type: values.fraud_type,
+        urgency: values.urgency,
+        ...(values.client_id ? { client_id: values.client_id } : {}),
+        ...(values.area ? { area: values.area } : {}),
+        ...(values.matter ? { matter: values.matter } : {}),
+      });
       router.push(`/cases/${created.id}`);
     } catch (error) {
       setFormError(
@@ -65,7 +84,7 @@ export default function NewCasePage() {
         <h1 className="mt-2 text-lg font-semibold text-slate-900">Novo caso</h1>
         <p className="text-sm text-slate-500">
           Abra um caso de Direito Digital para este escritório. O relato inicial e o checklist de
-          documentos são preenchidos na etapa de Intake, depois de criado.
+          documentos são preenchidos na etapa de Abertura de caso, depois de criado.
         </p>
       </div>
 
@@ -133,8 +152,65 @@ export default function NewCasePage() {
           {errors.urgency && <p className="mt-1 text-xs text-red-600">{errors.urgency.message}</p>}
         </div>
 
+        <div>
+          <label htmlFor="client_id" className="block text-sm font-medium text-slate-700">
+            Token do cliente <span className="font-normal text-slate-400">(opcional)</span>
+          </label>
+          <input
+            id="client_id"
+            type="text"
+            placeholder="Ex.: 3f2a9c10-4b7e-4d51-9a2f-8e0c1d6b5a44"
+            aria-describedby="client_id-help"
+            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm focus:border-slate-500 focus:outline-none"
+            {...register("client_id")}
+          />
+          <p id="client_id-help" className="mt-1 text-xs text-slate-500">
+            Identificador do cliente já cadastrado neste escritório. Pode ficar em branco e ser
+            preenchido depois, na edição do caso.
+          </p>
+          {errors.client_id && (
+            <p className="mt-1 text-xs text-red-600">{errors.client_id.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="area" className="block text-sm font-medium text-slate-700">
+            Área <span className="font-normal text-slate-400">(opcional)</span>
+          </label>
+          <select
+            id="area"
+            defaultValue=""
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+            {...register("area")}
+          >
+            <option value="">A definir na triagem</option>
+            {AREA_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          {errors.area && <p className="mt-1 text-xs text-red-600">{errors.area.message}</p>}
+        </div>
+
+        <div>
+          <label htmlFor="matter" className="block text-sm font-medium text-slate-700">
+            Matéria <span className="font-normal text-slate-400">(opcional)</span>
+          </label>
+          <input
+            id="matter"
+            type="text"
+            placeholder="Ex.: golpe do PIX via WhatsApp clonado"
+            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+            {...register("matter")}
+          />
+          {errors.matter && <p className="mt-1 text-xs text-red-600">{errors.matter.message}</p>}
+        </div>
+
         {formError && (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>
+          <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            {formError}
+          </p>
         )}
 
         <div className="flex justify-end gap-2">

@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useState } from "react";
 
+import { AdvanceStageAction } from "@/components/cases/AdvanceStageAction";
 import { AuditLogTimeline } from "@/components/cases/AuditLogTimeline";
 import { IntakeNarrativeForm } from "@/components/cases/IntakeNarrativeForm";
 import { IntakeResultPanel } from "@/components/cases/IntakeResultPanel";
@@ -118,13 +119,22 @@ export default function CaseIntakePage() {
         <p className="mt-1 text-sm text-slate-500">
           Aprovar, corrigir ou devolver a recomendação da triagem para complementação.
         </p>
-        <div className="mt-3">
+        <div className="mt-3 space-y-4">
           <IntakeReviewForm
             caseId={caseId}
             caseStatus={caseData.status}
             result={result}
             canWrite={canWrite}
             onReviewed={refreshEverything}
+          />
+          {/* Sem recomendação pendente não há o que aprovar acima — este é o
+              único caminho para o caso sair da abertura. */}
+          <AdvanceStageAction
+            caseId={caseId}
+            caseData={caseData}
+            hasIntake={intake !== null}
+            canWrite={canWrite}
+            onAdvanced={refreshEverything}
           />
         </div>
       </section>

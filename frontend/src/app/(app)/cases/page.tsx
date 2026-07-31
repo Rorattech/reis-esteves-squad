@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { CaseRowActions } from "@/components/cases/CaseRowActions";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
@@ -10,8 +12,8 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAuth } from "@/hooks/useAuth";
 import { useCases } from "@/hooks/useCases";
 import { CASE_STATUS_LABELS, FRAUD_TYPE_LABELS } from "@/lib/caseLabels";
-import { CASE_STAGES } from "@/lib/caseStages";
-import { canWriteCase } from "@/lib/roles";
+import { stageLabel } from "@/lib/caseStages";
+import { canDeleteCase, canWriteCase } from "@/lib/roles";
 import type { CaseStatus } from "@/types/api";
 
 const STATUS_FILTER_OPTIONS: { value: CaseStatus | "all"; label: string }[] = [
@@ -23,12 +25,17 @@ const STATUS_FILTER_OPTIONS: { value: CaseStatus | "all"; label: string }[] = [
 ];
 
 export default function CasesPage() {
+  const router = useRouter();
   const { cases, isLoading, error, reload } = useCases();
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CaseStatus | "all">("all");
 
+  // Esconder ação que o papel não pode executar é só conveniência de UX — o
+  // backend reforça a autorização de verdade (CLAUDE.md, seção 16).
   const canCreateCase = canWriteCase(user);
+  const canEditCase = canWriteCase(user);
+  const canRemoveCase = canDeleteCase(user);
 
   // Filtro e busca são só do lado do cliente, sobre a lista já carregada —
   // GET /cases não aceita parâmetros de busca/filtro hoje (backend/app/api/v1/cases.py).
@@ -112,7 +119,7 @@ export default function CasesPage() {
               description="Ajuste a busca ou o filtro de status para ver outros casos."
             />
           ) : (
-            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
@@ -122,37 +129,51 @@ export default function CasesPage() {
                     <th className="px-4 py-3 font-medium">Status</th>
                     <th className="px-4 py-3 font-medium">Etapa atual</th>
                     <th className="px-4 py-3 font-medium">Última atualização</th>
+                    <th className="px-4 py-3 text-right font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredCases.map((item) => {
-                    const stage = CASE_STAGES.find((s) => s.module === item.current_module);
-                    return (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3">
-                          <Link
-                            href={`/cases/${item.id}`}
-                            className="font-medium text-slate-900 hover:underline"
-                          >
-                            {item.platform}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-slate-500">{item.client_id ?? "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {FRAUD_TYPE_LABELS[item.fraud_type] ?? item.fraud_type}
-                        </td>
-                        <td className="px-4 py-3">
-                          <StatusBadge status={item.status} />
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {stage?.label ?? item.current_module}
-                        </td>
-                        <td className="px-4 py-3 text-slate-500">
-                          {new Date(item.updated_at).toLocaleDateString("pt-BR")}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {filteredCases.map((item) => (
+                    <tr
+                      key={item.id}
+                      onClick={() => router.push(`/cases/${item.id}`)}
+                      className="cursor-pointer hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3">
+                        {/* Continua sendo um link de verdade: é o alvo de
+                            navegação por teclado e leitor de tela da linha,
+                            que o onClick do <tr> sozinho não oferece. */}
+                        <Link
+                          href={`/cases/${item.id}`}
+                          className="font-medium text-slate-900 hover:underline"
+                        >
+                          {item.platform}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">{item.client_id ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {FRAUD_TYPE_LABELS[item.fraud_type] ?? item.fraud_type}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={item.status} />
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {stageLabel(item.current_module)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {new Date(item.updated_at).toLocaleDateString("pt-BR")}
+                      </td>
+                      <td className="px-4 py-3">
+                        <CaseRowActions
+                          caseId={item.id}
+                          caseLabel={item.platform}
+                          canEdit={canEditCase}
+                          canDelete={canRemoveCase}
+                          onDeleted={reload}
+                        />
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

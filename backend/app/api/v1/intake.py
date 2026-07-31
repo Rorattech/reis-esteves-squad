@@ -34,6 +34,7 @@ from app.models.schemas.case_document import (
 from app.models.schemas.case_intake import CaseIntakeCreate, CaseIntakeResponse, CaseIntakeUpdate
 from app.models.schemas.intake import (
     AuditLogEntryResponse,
+    CaseStageAdvanceRequest,
     IntakeResultResponse,
     IntakeReviewRequest,
 )
@@ -46,6 +47,8 @@ from app.services.case_intake_service import get_intake, submit_intake, update_i
 from app.services.intake_orchestration_service import (
     IntakeNotReadyError,
     IntakeReviewConflictError,
+    StageAdvanceConflictError,
+    advance_case_to_evidence,
     review_intake_recommendation,
     run_intake,
 )
@@ -494,6 +497,59 @@ async def review_case_intake(
         tenant_id=str(tenant_id),
         decision=payload.decision.value,
     )
+    return case
+
+
+@router.post(
+    "/intake/advance",
+    response_model=CaseResponse,
+    dependencies=[Depends(_require_case_writer)],
+)
+async def advance_case_stage(
+    case_id: uuid.UUID,
+    payload: CaseStageAdvanceRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_tenant_session),
+) -> Case:
+    """Conclui a abertura do caso e o avança para o módulo de evidências.
+
+    Existe para o caso — comum neste ambiente — em que nenhuma recomendação
+    de triagem foi produzida e portanto não há nada a aprovar em
+    `POST .../intake/review`: sem esta rota o caso ficaria preso na abertura
+    indefinidamente, para qualquer papel. Nunca avança sozinha (CLAUDE.md,
+    seção 2) — depende de uma ação humana explícita e autenticada, registrada
+    em audit_logs.
+
+    Args:
+        case_id: ID do caso.
+        payload: Justificativa opcional do avanço.
+        request: Request HTTP corrente, com `state.tenant_id`/`state.user_id`.
+        session: Sessão do banco já escopada por tenant.
+
+    Returns:
+        O caso atualizado, já no módulo de evidências.
+
+    Raises:
+        HTTPException: 404 se o caso não existir; 409 se o caso já tiver
+            saído da abertura; 422 se ainda não houver relato inicial.
+    """
+    tenant_id = uuid.UUID(request.state.tenant_id)
+    try:
+        case = await advance_case_to_evidence(
+            session,
+            tenant_id=tenant_id,
+            case_id=case_id,
+            actor_id=uuid.UUID(request.state.user_id),
+            payload=payload,
+        )
+    except StageAdvanceConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except IntakeNotReadyError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    if case is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Caso não encontrado.")
+
+    logger.info("intake.advance", case_id=str(case_id), tenant_id=str(tenant_id))
     return case
 
 

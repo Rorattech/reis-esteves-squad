@@ -6,27 +6,27 @@ tenant (CLAUDE.md, seção 7 — regra crítica).
 """
 
 from httpx import AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.models.case_document import CaseDocument
 from app.models.case_intake import CaseIntake
 from app.models.client import Client
-from tests.conftest import _SET_TENANT_GUC, TenantFixture, login
+from tests.conftest import TenantFixture, login
 
 
 async def test_rls_blocks_cross_tenant_read_of_clients(
     tenant: TenantFixture, other_tenant: TenantFixture
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         client = Client(tenant_id=tenant.tenant_id, full_name="Cliente do Tenant A")
         session.add(client)
         await session.commit()
         client_id = client.id
 
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(other_tenant.tenant_id)})
+        scope_session_to_tenant(session, other_tenant.tenant_id)
         visible_ids = (await session.scalars(select(Client.id))).all()
         assert client_id not in visible_ids
 
@@ -35,7 +35,7 @@ async def test_rls_blocks_cross_tenant_read_of_case_intakes(
     tenant_with_case: TenantFixture, other_tenant: TenantFixture
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         intake = CaseIntake(
             tenant_id=tenant_with_case.tenant_id,
             case_id=tenant_with_case.case_id,
@@ -47,7 +47,7 @@ async def test_rls_blocks_cross_tenant_read_of_case_intakes(
         intake_id = intake.id
 
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(other_tenant.tenant_id)})
+        scope_session_to_tenant(session, other_tenant.tenant_id)
         visible_ids = (await session.scalars(select(CaseIntake.id))).all()
         assert intake_id not in visible_ids
 
@@ -56,7 +56,7 @@ async def test_rls_blocks_cross_tenant_read_of_case_documents(
     tenant_with_case: TenantFixture, other_tenant: TenantFixture
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         item = CaseDocument(
             tenant_id=tenant_with_case.tenant_id,
             case_id=tenant_with_case.case_id,
@@ -67,7 +67,7 @@ async def test_rls_blocks_cross_tenant_read_of_case_documents(
         item_id = item.id
 
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(other_tenant.tenant_id)})
+        scope_session_to_tenant(session, other_tenant.tenant_id)
         visible_ids = (await session.scalars(select(CaseDocument.id))).all()
         assert item_id not in visible_ids
 
@@ -76,7 +76,7 @@ async def test_api_rejects_case_creation_with_client_id_of_another_tenant(
     api_client: AsyncClient, tenant: TenantFixture, other_tenant: TenantFixture
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(other_tenant.tenant_id)})
+        scope_session_to_tenant(session, other_tenant.tenant_id)
         foreign_client = Client(
             tenant_id=other_tenant.tenant_id, full_name="Cliente de Outro Tenant"
         )

@@ -10,11 +10,10 @@ import uuid
 
 import structlog
 from fastapi import Request, Response, status
-from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse
 
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.core.security import InvalidTokenError, TokenType, decode_token
 
 logger = structlog.get_logger()
@@ -71,19 +70,12 @@ class TenantMiddleware(BaseHTTPMiddleware):
         request.state.role = payload.get("role")
 
         async with async_session_factory() as session:
-            # set_config (não SET direto) permite parâmetro ligado com segurança
-            # contra injection; is_local=False mantém o valor por toda a sessão,
-            # que aqui vive apenas durante esta request. app.bootstrap é sempre
-            # forçado a 'false' aqui: se esta conexão física já foi usada antes
-            # por get_auth_bootstrap_session (pool reutiliza conexões), o bypass
-            # de RLS daquela request não pode vazar para esta (app/core/db.py).
-            await session.execute(
-                text(
-                    "SELECT set_config('app.current_tenant', :tenant_id, false), "
-                    "set_config('app.bootstrap', 'false', false)"
-                ),
-                {"tenant_id": str(tenant_id)},
-            )
+            # Declara o escopo de RLS uma vez; app/core/db.py o reaplica no
+            # início de CADA transação desta sessão — inclusive nas que vêm
+            # depois de um commit(), que podem sair por outra conexão física
+            # do pool. app.bootstrap fica 'false': o bypass de RLS de
+            # get_auth_bootstrap_session nunca vale numa request autenticada.
+            scope_session_to_tenant(session, tenant_id)
             request.state.db = session
             return await call_next(request)
 

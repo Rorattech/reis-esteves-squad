@@ -13,9 +13,9 @@ from httpx import AsyncClient
 from sqlalchemy import text
 
 from app.api.v1.intake import get_llm_client
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.main import app
-from tests.conftest import _SET_TENANT_GUC, TenantFixture, login
+from tests.conftest import TenantFixture, login
 from tests.llm_stubs import StubLLMClient
 from tests.test_evidence_api import _TXT_BYTES, _upload, storage_root  # noqa: F401
 
@@ -86,7 +86,7 @@ async def evidence_ready_case(
         mime_type="text/plain",
     )
     async with async_session_factory() as session:
-        await session.execute(_SET_TENANT_GUC_TEXT, {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         await session.execute(
             text("UPDATE cases SET current_module = 'evidence' WHERE id = :case_id"),
             {"case_id": str(tenant_with_case.case_id)},
@@ -99,9 +99,6 @@ async def evidence_ready_case(
         yield tenant_with_case, body["id"]
     finally:
         app.dependency_overrides.pop(get_llm_client, None)
-
-
-_SET_TENANT_GUC_TEXT = text(_SET_TENANT_GUC)
 
 
 async def test_run_analysis_persists_findings_and_requires_review(

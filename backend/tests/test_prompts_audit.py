@@ -6,11 +6,11 @@ import hashlib
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.core.audit import audit_entry_to_orm, create_audit_entry
 from app.core.config import settings
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.core.prompts import (
     PromptFrontMatter,
     PromptLoadError,
@@ -20,7 +20,7 @@ from app.core.prompts import (
     load_prompt_bundle,
 )
 from app.models.audit_log import AuditLog
-from tests.conftest import _SET_TENANT_GUC, TenantFixture
+from tests.conftest import TenantFixture
 
 
 def test_load_prompt_bundle_returns_all_four_layers_in_order() -> None:
@@ -168,7 +168,7 @@ async def test_prompt_audit_metadata_persists_versions_and_hashes_in_audit_log(
     )
 
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         orm_entry = audit_entry_to_orm(
             entry, tenant_id=tenant_with_case.tenant_id, case_id=tenant_with_case.case_id
         )
