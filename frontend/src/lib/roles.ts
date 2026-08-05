@@ -11,6 +11,17 @@ import type { User, UserRole } from "@/types/api";
  */
 const CASE_WRITER_ROLES = new Set<UserRole>(["admin", "lawyer", "paralegal"]);
 
+/**
+ * Excluir um caso é destrutivo e irreversível, então é mais restrito que
+ * editar: paralegal escreve, mas não exclui. Espelha `_require_case_deleter`
+ * em backend/app/api/v1/cases.py.
+ */
+const CASE_DELETER_ROLES = new Set<UserRole>(["admin", "lawyer"]);
+
 export function canWriteCase(user: User | null): boolean {
   return user !== null && CASE_WRITER_ROLES.has(user.role);
+}
+
+export function canDeleteCase(user: User | null): boolean {
+  return user !== null && CASE_DELETER_ROLES.has(user.role);
 }

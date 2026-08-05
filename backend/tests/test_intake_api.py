@@ -10,15 +10,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from httpx import AsyncClient
-from sqlalchemy import text
 
 from app.api.v1.intake import get_llm_client
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.core.security import hash_password
 from app.main import app
 from app.models.enums import UserRole
 from app.models.user import User
-from tests.conftest import _SET_TENANT_GUC, TenantFixture, login
+from tests.conftest import TenantFixture, login
 from tests.llm_stubs import StubLLMClient
 
 _PIX_COORDINATOR_RESPONSE = {
@@ -60,7 +59,7 @@ async def _login_as_new_user(
     email = f"user-{uuid.uuid4().hex[:10]}@pytestsquad.example.com.br"
     password = "senha-de-teste-123"
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         session.add(
             User(
                 tenant_id=tenant.tenant_id,
@@ -275,6 +274,126 @@ async def test_reviewing_twice_after_approval_is_conflict(
         f"/api/v1/cases/{case_id}/intake/review", json={"decision": "approve"}, headers=headers
     )
     assert second.status_code == 409
+
+
+# --- Avanço manual da abertura do caso para Evidências ------------------------
+
+
+async def test_advance_moves_case_to_evidence_without_ai_triage(
+    api_client: AsyncClient, tenant_with_case: TenantFixture
+) -> None:
+    """Sem provedor de IA, a triagem responde 503 e o caso nunca chega a
+    pending_approval — o avanço manual é o único caminho para Evidências."""
+    headers = await login(api_client, tenant_with_case)
+    case_id = tenant_with_case.case_id
+    await api_client.post(
+        f"/api/v1/cases/{case_id}/intake",
+        json={"narrative": "Comprei um celular e nunca recebi."},
+        headers=headers,
+    )
+
+    blocked = await api_client.post(f"/api/v1/cases/{case_id}/intake/run", headers=headers)
+    assert blocked.status_code == 503
+    conflict = await api_client.post(
+        f"/api/v1/cases/{case_id}/intake/review", json={"decision": "approve"}, headers=headers
+    )
+    assert conflict.status_code == 409
+
+    response = await api_client.post(
+        f"/api/v1/cases/{case_id}/intake/advance",
+        json={"notes": "Relato e documentos conferidos manualmente."},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["current_module"] == "evidence"
+    assert body["status"] == "in_progress"
+
+
+async def test_advance_is_recorded_in_the_audit_log_as_a_human_action(
+    api_client: AsyncClient, tenant_with_case: TenantFixture
+) -> None:
+    headers = await login(api_client, tenant_with_case)
+    case_id = tenant_with_case.case_id
+    await api_client.post(
+        f"/api/v1/cases/{case_id}/intake", json={"narrative": "relato"}, headers=headers
+    )
+    await api_client.post(
+        f"/api/v1/cases/{case_id}/intake/advance",
+        json={"notes": "abertura concluída"},
+        headers=headers,
+    )
+
+    audit = await api_client.get(f"/api/v1/cases/{case_id}/audit-log", headers=headers)
+    entries = [e for e in audit.json() if "avanço manual" in e["action"]]
+    assert len(entries) == 1
+    assert entries[0]["actor"] == "human"
+    assert entries[0]["metadata"]["notes"] == "abertura concluída"
+    # Deixa explícito no histórico que nenhuma recomendação de IA foi revisada.
+    assert entries[0]["metadata"]["ai_triage_reviewed"] is False
+
+
+async def test_advance_without_narrative_returns_422(
+    api_client: AsyncClient, tenant_with_case: TenantFixture
+) -> None:
+    headers = await login(api_client, tenant_with_case)
+    response = await api_client.post(
+        f"/api/v1/cases/{tenant_with_case.case_id}/intake/advance", json={}, headers=headers
+    )
+    assert response.status_code == 422
+
+
+async def test_advance_twice_is_conflict(
+    api_client: AsyncClient, tenant_with_case: TenantFixture
+) -> None:
+    headers = await login(api_client, tenant_with_case)
+    case_id = tenant_with_case.case_id
+    await api_client.post(
+        f"/api/v1/cases/{case_id}/intake", json={"narrative": "relato"}, headers=headers
+    )
+    first = await api_client.post(
+        f"/api/v1/cases/{case_id}/intake/advance", json={}, headers=headers
+    )
+    assert first.status_code == 200
+
+    second = await api_client.post(
+        f"/api/v1/cases/{case_id}/intake/advance", json={}, headers=headers
+    )
+    assert second.status_code == 409
+
+
+async def test_viewer_cannot_advance_case(
+    api_client: AsyncClient, tenant_with_case: TenantFixture
+) -> None:
+    owner_headers = await login(api_client, tenant_with_case)
+    await api_client.post(
+        f"/api/v1/cases/{tenant_with_case.case_id}/intake",
+        json={"narrative": "relato"},
+        headers=owner_headers,
+    )
+    viewer_headers = await _login_as_new_user(api_client, tenant_with_case, UserRole.VIEWER)
+    response = await api_client.post(
+        f"/api/v1/cases/{tenant_with_case.case_id}/intake/advance", json={}, headers=viewer_headers
+    )
+    assert response.status_code == 403
+
+
+async def test_advance_is_isolated_between_tenants(
+    api_client: AsyncClient, tenant_with_case: TenantFixture, other_tenant: TenantFixture
+) -> None:
+    owner_headers = await login(api_client, tenant_with_case)
+    await api_client.post(
+        f"/api/v1/cases/{tenant_with_case.case_id}/intake",
+        json={"narrative": "relato"},
+        headers=owner_headers,
+    )
+    intruder_headers = await login(api_client, other_tenant)
+    response = await api_client.post(
+        f"/api/v1/cases/{tenant_with_case.case_id}/intake/advance",
+        json={},
+        headers=intruder_headers,
+    )
+    assert response.status_code == 404
 
 
 # --- Execução sem provedor de IA configurado / sem relato --------------------

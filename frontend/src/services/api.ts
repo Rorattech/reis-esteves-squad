@@ -18,6 +18,7 @@ import type {
   CaseIntake,
   CaseIntakeCreateInput,
   CaseIntakeUpdateInput,
+  CaseStageAdvanceInput,
   CaseUpdateInput,
   EvidenceAnalysisResult,
   EvidenceAnalysisReviewInput,
@@ -170,6 +171,11 @@ export const api = {
     return request<Case>(`/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(input) });
   },
 
+  /** Irreversível: leva junto relato, checklist, evidências e checkpoints do caso. */
+  async deleteCase(caseId: string): Promise<void> {
+    return request<void>(`/cases/${caseId}`, { method: "DELETE" });
+  },
+
   /** 404 se o caso não existir OU se o relato inicial ainda não tiver sido enviado. */
   async getCaseIntake(caseId: string): Promise<CaseIntake> {
     return request<CaseIntake>(`/cases/${caseId}/intake`);
@@ -225,6 +231,18 @@ export const api = {
   /** 409 se o caso não tiver nenhuma recomendação pendente de revisão. */
   async reviewIntake(caseId: string, input: IntakeReviewInput): Promise<Case> {
     return request<Case>(`/cases/${caseId}/intake/review`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  /**
+   * Conclui a abertura do caso e o avança para Evidências por decisão humana,
+   * sem passar por uma recomendação de triagem. 409 se o caso já tiver saído
+   * da abertura; 422 se ainda não houver relato inicial.
+   */
+  async advanceCaseStage(caseId: string, input: CaseStageAdvanceInput = {}): Promise<Case> {
+    return request<Case>(`/cases/${caseId}/intake/advance`, {
       method: "POST",
       body: JSON.stringify(input),
     });

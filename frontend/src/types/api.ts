@@ -63,10 +63,10 @@ export interface Case {
 }
 
 /**
- * Espelha CaseCreate (backend/app/models/schemas/case.py). client_id/area/
- * matter existem no schema real, mas não há endpoint de cadastro de cliente
- * nem tela de triagem ainda (Fase 2.4 não expôs `/clients`) — o formulário de
- * Novo Caso (Fase 2.5) só preenche platform/fraud_type/urgency.
+ * Espelha CaseCreate (backend/app/models/schemas/case.py). client_id, area e
+ * matter são opcionais: podem não ser conhecidos na abertura e serem
+ * preenchidos depois, pela triagem ou por correção humana na tela de edição
+ * do caso.
  */
 export interface CaseCreateInput {
   platform: string;
@@ -178,6 +178,15 @@ export interface IntakeResult {
   human_review_required: boolean;
   status: CaseStatus;
   current_module: ModuleName;
+}
+
+/**
+ * Espelha CaseStageAdvanceRequest (backend/app/models/schemas/intake.py) —
+ * decisão humana de concluir a abertura do caso e avançar para Evidências
+ * quando não há recomendação de triagem a revisar.
+ */
+export interface CaseStageAdvanceInput {
+  notes?: string | null;
 }
 
 /** Espelha IntakeReviewDecision (backend/app/models/schemas/intake.py). */

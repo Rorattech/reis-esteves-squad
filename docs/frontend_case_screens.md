@@ -93,19 +93,56 @@ um 404 permanente).
 - Estados: carregando, erro (com "Tentar novamente"), vazio, sucesso — vazio
   tem ação "Criar caso"; nenhum "acesso negado" aqui porque listar o
   próprio tenant nunca falha com 404/403 para um usuário autenticado.
+- **Linha inteira clicável** (`<tr onClick>` → `router.push`), não só a
+  coluna Plataforma. A célula Plataforma continua sendo um `<Link>` de
+  verdade: é o alvo de navegação por teclado e leitor de tela da linha, que
+  um `onClick` no `<tr>` sozinho não oferece.
+- **Coluna Ações** (`CaseRowActions`) com ícones `lucide-react` de editar e
+  excluir. Todo clique ali chama `e.stopPropagation()` — sem isso, "Excluir"
+  abriria o caso por baixo do diálogo de confirmação. Editar leva a
+  `/cases/{id}/editar`; excluir passa por `ConfirmDialog` (ação
+  irreversível, CLAUDE.md seção 16) e só chama `DELETE /cases/{id}` depois da
+  confirmação, recarregando a lista a partir do backend em vez de remover a
+  linha de forma otimista.
+- Visibilidade das ações por papel: editar para `admin`/`lawyer`/`paralegal`,
+  excluir só para `admin`/`lawyer` (espelha `_require_case_deleter`). É
+  conveniência de UX — o backend reforça a autorização de verdade.
 
 ### `src/app/(app)/cases/new/page.tsx` — Novo Caso (rota nova)
 
 Formulário com `react-hook-form` + `zod`, mesmo padrão de
-`src/app/login/page.tsx`. Campos: `platform` (texto, obrigatório, ≤100
-caracteres), `fraud_type` (select, obrigatório), `urgency` (select, default
-"medium") — exatamente os campos de `CaseCreate`
-(`backend/app/models/schemas/case.py`) que fazem sentido pedir na abertura
-do caso. Validação no frontend é só a primeira camada — o backend continua
+`src/app/login/page.tsx`. Campos, espelhando `CaseCreate`
+(`backend/app/models/schemas/case.py`):
+
+| Campo | Tipo | Obrigatório | Observação |
+|---|---|---|---|
+| `platform` | texto (≤100) | sim | |
+| `fraud_type` | select | sim | |
+| `urgency` | select | não (default "medium") | |
+| `client_id` — "Token do cliente" | texto | não | validado como UUID no formulário; a existência do cliente **neste tenant** só o backend confirma (`404 Cliente não encontrado.`) |
+| `area` — "Área" | select | não | opção em branco = "A definir na triagem" |
+| `matter` — "Matéria" | texto (≤255) | não | |
+
+Campos opcionais em branco são **omitidos do payload** em vez de enviados
+como `""` — o backend rejeitaria com 422 (`client_id` espera UUID, `area`
+espera um valor do enum `CaseArea`).
+
+Validação no frontend é só a primeira camada — o backend continua
 validando e a mensagem de erro da API (`ApiError.message`, já preparado
 para o formato `detail` de erro 422 do FastAPI) é exibida se passar da
 validação do formulário mas falhar no servidor. Sucesso redireciona para
 `/cases/{id}` via `router.push`.
+
+### `src/app/(app)/cases/[caseId]/editar/page.tsx` — Editar caso (rota nova)
+
+Mantém token do cliente, área e matéria **visíveis e editáveis depois da
+criação**, via `PATCH /cases/{id}`. Mesmos campos e validações do formulário
+de Novo Caso, com uma diferença: token do cliente em branco vira `null`
+explícito (desvincula o cliente), não é omitido.
+
+Só edita dados de cadastro. `status` e `current_module` não aparecem aqui:
+são definidos pelo backend a partir das decisões de revisão humana do fluxo
+(CLAUDE.md, seção 16 — a interface nunca simula avanço de etapa).
 
 ### `src/app/(app)/cases/[caseId]/layout.tsx` — Detalhe do Caso
 
@@ -127,21 +164,20 @@ Mesma lógica de `notFound` → `AccessDeniedState`.
 
 ## Decisões de escopo (o que ficou de fora, de propósito)
 
-- **Sem seletor de cliente no formulário de Novo Caso.** `CaseCreate`
-  aceita `client_id` opcional, mas não existe nenhum endpoint
-  `GET/POST /clients` (Fase 2.1 criou `client_service.py`, mas nunca uma
-  rota — ver docs/phase_2_intake_domain.md). Adicionar um seletor de
-  cliente exigiria inventar uma tela/endpoint que não existe. `client_id`
-  continua no tipo `CaseCreateInput` (é real no backend), só não é
-  preenchido por este formulário.
-- **Sem `area`/`matter` no formulário de Novo Caso.** Esses campos são o
-  produto da triagem (Fase 2.3 — nó `triage`), não algo que o advogado
-  digita ao abrir o caso. Pedi-los aqui antecipa uma decisão que é do
-  copiloto, não do formulário de abertura.
-- **Aba "Intake" continua `ModulePlaceholder`.** O backend de intake existe
-  desde a Fase 2.4, mas a tela (relato inicial, checklist, executar
-  triagem, revisão humana) é a Fase 2.6 — um passo seguinte do roadmap,
-  não desta fase.
+- **Token do cliente é digitado, não escolhido em um seletor.** `client_id`
+  agora é preenchível no formulário (Novo Caso e Editar caso), mas como
+  texto: continua não existindo nenhum endpoint `GET/POST /clients` (a Fase
+  2.1 criou `client_service.py`, nunca uma rota — ver
+  docs/phase_2_intake_domain.md). Um `<select>` de clientes exigiria uma
+  tela e um endpoint que não existem; o campo de token usa o que o backend
+  de fato aceita hoje, com o formato validado no formulário e a existência
+  validada pelo servidor.
+- **`area`/`matter` são opcionais, e é de propósito.** Continuam sendo o
+  produto esperado da triagem (Fase 2.3 — nó `triage`); o formulário os
+  oferece para o caso em que o advogado já sabe a classificação, sem nunca
+  exigi-los. A opção em branco de Área é rotulada "A definir na triagem"
+  justamente para não sugerir que o preenchimento humano substitui a
+  triagem.
 
 ## Testes
 
@@ -166,6 +202,25 @@ Testes extras (não pedidos explicitamente, mas cobrem regras do CLAUDE.md
 exercitadas nesta fase): RBAC do botão "Novo caso" por papel, filtro/busca
 client-side sem nova chamada à API, e bloqueio de etapas futuras na linha
 do tempo.
+
+### Cobertura acrescentada com a linha clicável, as ações e a edição
+
+`cases/page.test.tsx`: navegação ao clicar numa célula que não é link nem
+botão (prova que a linha inteira responde); clique em Editar e em Excluir
+**não** dispara a navegação da linha (`stopPropagation`); exclusão só após
+confirmação, com recarga da lista pelo backend; cancelamento sem chamar a
+API; erro de API exibido sem tirar o caso da lista; e visibilidade das ações
+por papel (paralegal edita mas não exclui; viewer não vê nenhuma).
+
+`[caseId]/editar/page.test.tsx`: carregamento, campos pré-preenchidos, salvar,
+desvincular cliente (token apagado → `null`), token em formato inválido sem
+chamar a API, erro do backend sem redirecionar, e acesso negado para viewer.
+
+`[caseId]/intake/page.test.tsx`: avanço da abertura para Evidências com
+confirmação e recarga pelo backend; bloqueio sem relato inicial; erro do
+backend sem marcar o caso como avançado; e as três situações em que a ação
+não deve aparecer (recomendação pendente, papel viewer, caso já em
+Evidências).
 
 ### Nota sobre a configuração do Vitest
 

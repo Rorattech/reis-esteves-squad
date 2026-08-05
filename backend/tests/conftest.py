@@ -37,7 +37,11 @@ import pytest_asyncio  # noqa: E402 — precisa vir depois de _load_repo_root_en
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
-from app.core.db import async_session_factory  # noqa: E402
+from app.core.db import (  # noqa: E402
+    async_session_factory,
+    scope_session_to_auth_bootstrap,
+    scope_session_to_tenant,
+)
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.case import Case  # noqa: E402
@@ -45,15 +49,6 @@ from app.models.client import Client  # noqa: E402
 from app.models.enums import FraudType, UrgencyLevel, UserRole  # noqa: E402
 from app.models.tenant import Tenant  # noqa: E402
 from app.models.user import User  # noqa: E402
-
-_RESET_GUCS = (
-    "SELECT set_config('app.current_tenant', '', false), "
-    "set_config('app.bootstrap', 'true', false)"
-)
-_SET_TENANT_GUC = (
-    "SELECT set_config('app.current_tenant', :t, false), "
-    "set_config('app.bootstrap', 'false', false)"
-)
 
 
 class TenantFixture:
@@ -74,7 +69,7 @@ async def _create_tenant(role: UserRole = UserRole.ADMIN) -> TenantFixture:
     password = "senha-de-teste-123"
 
     async with async_session_factory() as session:
-        await session.execute(text(_RESET_GUCS))
+        scope_session_to_auth_bootstrap(session)
         tenant_row = Tenant(name=f"Tenant Pytest {suffix}", slug=f"pytest-{suffix}")
         session.add(tenant_row)
         await session.flush()
@@ -95,7 +90,7 @@ async def _create_tenant(role: UserRole = UserRole.ADMIN) -> TenantFixture:
 
 async def _delete_tenant(tenant_id: uuid.UUID) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_RESET_GUCS))
+        scope_session_to_auth_bootstrap(session)
         await session.execute(
             text("DELETE FROM tenants WHERE id = :tenant_id"), {"tenant_id": str(tenant_id)}
         )
@@ -136,7 +131,7 @@ async def viewer_tenant() -> AsyncIterator[TenantFixture]:
 async def tenant_with_client(tenant: TenantFixture) -> TenantFixture:
     """Tenant de teste com um cliente já cadastrado (útil para testes de intake)."""
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         client = Client(tenant_id=tenant.tenant_id, full_name="Cliente Pytest")
         session.add(client)
         await session.commit()
@@ -149,7 +144,7 @@ async def tenant_with_client(tenant: TenantFixture) -> TenantFixture:
 async def tenant_with_case(tenant: TenantFixture) -> TenantFixture:
     """Tenant de teste com um caso já criado (útil para testes de leitura/RBAC)."""
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         case = Case(
             tenant_id=tenant.tenant_id,
             user_id=tenant.user_id,

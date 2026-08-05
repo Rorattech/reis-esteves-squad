@@ -17,6 +17,7 @@ const {
   reviewIntakeMock,
   listCaseDocumentsMock,
   getAuditLogMock,
+  advanceCaseStageMock,
 } = vi.hoisted(() => ({
   getCaseMock: vi.fn(),
   getCaseIntakeMock: vi.fn(),
@@ -27,6 +28,7 @@ const {
   reviewIntakeMock: vi.fn(),
   listCaseDocumentsMock: vi.fn(),
   getAuditLogMock: vi.fn(),
+  advanceCaseStageMock: vi.fn(),
 }));
 
 vi.mock("@/services/api", async () => {
@@ -44,6 +46,7 @@ vi.mock("@/services/api", async () => {
       reviewIntake: reviewIntakeMock,
       listCaseDocuments: listCaseDocumentsMock,
       getAuditLog: getAuditLogMock,
+      advanceCaseStage: advanceCaseStageMock,
     },
   };
 });
@@ -135,6 +138,7 @@ beforeEach(() => {
     reviewIntakeMock,
     listCaseDocumentsMock,
     getAuditLogMock,
+    advanceCaseStageMock,
   ]) {
     mock.mockReset();
   }
@@ -341,5 +345,108 @@ describe("CaseIntakePage — revisão humana", () => {
     expect(
       await screen.findByText("Este caso não tem nenhuma recomendação de Intake pendente de revisão."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("CaseIntakePage — avanço da abertura para Evidências", () => {
+  /**
+   * Sem provedor de IA configurado a triagem responde 503, o caso nunca chega
+   * a `pending_approval` e o fluxo de aprovação fica sem nada para aprovar —
+   * este é o único caminho para o caso sair da abertura.
+   */
+  function caseWithoutRecommendation() {
+    getCaseMock.mockResolvedValue(makeCase({ status: "draft" }));
+    getIntakeResultMock.mockRejectedValue(new ApiError(404, "O Intake ainda não foi executado."));
+  }
+
+  it("avança o caso e recarrega os dados a partir do backend", async () => {
+    caseWithoutRecommendation();
+    advanceCaseStageMock.mockResolvedValue(makeCase({ current_module: "evidence" }));
+
+    render(<CaseIntakePage />);
+    const advanceButton = await screen.findByRole("button", { name: /Avançar para Evidências/ });
+
+    await userEvent.type(
+      screen.getByLabelText(/Observação para o histórico/),
+      "Documentos conferidos.",
+    );
+    await userEvent.click(advanceButton);
+
+    // Ação que muda a etapa do caso: exige confirmação explícita.
+    expect(advanceCaseStageMock).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Avançar" }));
+
+    await waitFor(() =>
+      expect(advanceCaseStageMock).toHaveBeenCalledWith("55555555-5555-5555-5555-555555555555", {
+        notes: "Documentos conferidos.",
+      }),
+    );
+    // A etapa vem do backend recarregado, nunca de atualização otimista.
+    await waitFor(() => expect(getCaseMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("bloqueia o avanço enquanto não houver relato inicial", async () => {
+    caseWithoutRecommendation();
+    getCaseIntakeMock.mockRejectedValue(new ApiError(404, "Relato inicial ainda não registrado."));
+
+    render(<CaseIntakePage />);
+
+    const advanceButton = await screen.findByRole("button", { name: /Avançar para Evidências/ });
+    expect(advanceButton).toBeDisabled();
+    expect(
+      screen.getByText("Salve o relato inicial antes de avançar o caso para Evidências."),
+    ).toBeInTheDocument();
+  });
+
+  it("mostra o erro do backend sem marcar o caso como avançado", async () => {
+    caseWithoutRecommendation();
+    advanceCaseStageMock.mockRejectedValue(
+      new ApiError(409, "Este caso já saiu da abertura de caso."),
+    );
+
+    render(<CaseIntakePage />);
+    await userEvent.click(await screen.findByRole("button", { name: /Avançar para Evidências/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Avançar" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Este caso já saiu da abertura de caso.",
+    );
+  });
+
+  it("não oferece o avanço manual quando há recomendação pendente de revisão", async () => {
+    // Padrão do beforeEach: status pending_approval — o caminho correto é
+    // aprovar/corrigir/devolver a recomendação, não avançar por fora dela.
+    render(<CaseIntakePage />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Aprovar" })).toBeInTheDocument());
+    expect(
+      screen.queryByRole("button", { name: /Avançar para Evidências/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("não oferece o avanço para o papel viewer", async () => {
+    useAuthMock.mockReturnValue({ user: makeUser({ role: "viewer" }) });
+    caseWithoutRecommendation();
+
+    render(<CaseIntakePage />);
+
+    await waitFor(() => expect(screen.getByText("Relato inicial")).toBeInTheDocument());
+    expect(
+      screen.queryByRole("button", { name: /Avançar para Evidências/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("não oferece o avanço quando o caso já está em Evidências", async () => {
+    getCaseMock.mockResolvedValue(
+      makeCase({ status: "in_progress", current_module: "evidence" }),
+    );
+    getIntakeResultMock.mockRejectedValue(new ApiError(404, "O Intake ainda não foi executado."));
+
+    render(<CaseIntakePage />);
+
+    await waitFor(() => expect(screen.getByText("Relato inicial")).toBeInTheDocument());
+    expect(
+      screen.queryByRole("button", { name: /Avançar para Evidências/ }),
+    ).not.toBeInTheDocument();
   });
 });

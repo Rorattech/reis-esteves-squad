@@ -6,6 +6,7 @@ get_tenant_session — nunca abrem uma sessão própria nem aceitam tenant_id/
 user_id vindos do payload do cliente (ver comentário em schemas/case.py).
 """
 
+import time
 import uuid
 
 import structlog
@@ -13,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import audit_entry_to_orm, create_audit_entry
 from app.core.db import get_tenant_session
 from app.core.rbac import require_role
 from app.models.case import Case
@@ -24,8 +26,14 @@ logger = structlog.get_logger()
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
+# Não há chamada a modelo de IA nesta camada — "n/a" é o valor convencionado
+# no projeto para ações puramente humanas (ver app/services/client_service.py).
+_MODEL_USED_MANUAL = "n/a"
+
 # viewer só lê; abrir/editar um caso exige um papel operacional (CLAUDE.md, seção 12).
 _require_case_writer = require_role(UserRole.ADMIN, UserRole.LAWYER, UserRole.PARALEGAL)
+# Excluir é destrutivo e irreversível — mais restrito que editar: paralegal não exclui.
+_require_case_deleter = require_role(UserRole.ADMIN, UserRole.LAWYER)
 
 
 async def _ensure_client_belongs_to_tenant(
@@ -197,3 +205,58 @@ async def update_case(
 
     logger.info("cases.update", case_id=str(case.id), tenant_id=request.state.tenant_id)
     return case
+
+
+@router.delete(
+    "/{case_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(_require_case_deleter)],
+)
+async def delete_case(
+    case_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_tenant_session),
+) -> None:
+    """Exclui um caso do tenant autenticado e todo o material ligado a ele.
+
+    Ação destrutiva e irreversível: leva junto relato, checklist, evidências
+    e checkpoints do caso (cascade — ver relacionamentos em
+    app/models/case.py). Restrita a admin/lawyer: paralegal e viewer não
+    excluem casos (CLAUDE.md, seção 12). O registro em audit_logs sobrevive à
+    exclusão do caso para o histórico do escritório não ficar com um buraco.
+
+    Args:
+        case_id: ID do caso a excluir.
+        request: Request HTTP corrente, com `state.tenant_id`/`state.user_id`.
+        session: Sessão do banco já escopada por tenant.
+
+    Raises:
+        HTTPException: 403 se o papel não puder excluir; 404 se o caso não
+            existir neste tenant.
+    """
+    started_at = time.monotonic()
+    tenant_id = uuid.UUID(request.state.tenant_id)
+    case = await session.scalar(select(Case).where(Case.tenant_id == tenant_id, Case.id == case_id))
+    if case is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Caso não encontrado.")
+
+    entry = create_audit_entry(
+        actor_id=request.state.user_id,
+        action="excluiu o caso",
+        module=case.current_module.value,
+        input_data={"case_id": str(case_id)},
+        output_data={"deleted": True},
+        model_used=_MODEL_USED_MANUAL,
+        tokens_used=0,
+        duration_ms=int((time.monotonic() - started_at) * 1000),
+        actor="human",
+        metadata={"platform": case.platform, "fraud_type": case.fraud_type.value},
+    )
+    # case_id=None: a linha de audit_logs precisa sobreviver ao DELETE do caso
+    # (audit_logs.case_id tem cascade — ver app/models/case.py).
+    session.add(audit_entry_to_orm(entry, tenant_id=tenant_id, case_id=None))
+
+    await session.delete(case)
+    await session.commit()
+
+    logger.info("cases.delete", case_id=str(case_id), tenant_id=request.state.tenant_id)

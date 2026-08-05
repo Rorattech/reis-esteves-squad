@@ -7,9 +7,9 @@ saída do modelo — sempre com o LLMClient stubado (nunca uma chamada real).
 
 import pytest
 from langgraph.runtime import Runtime
-from sqlalchemy import select, text
+from sqlalchemy import select
 
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.models.audit_log import AuditLog
 from app.models.case import Case
 from app.models.enums import CaseArea, CaseStatus, FraudType
@@ -25,7 +25,7 @@ from orchestrator.graphs.intake import (
 )
 from orchestrator.llm import LLMNotConfiguredError
 from orchestrator.state import CaseState
-from tests.conftest import _SET_TENANT_GUC, TenantFixture
+from tests.conftest import TenantFixture
 from tests.llm_stubs import StubLLMClient
 
 _PIX_COORDINATOR_RESPONSE = {
@@ -290,7 +290,7 @@ async def test_persist_intake_recommendation_never_touches_another_tenants_case(
     )
 
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         updated = await persist_intake_recommendation(session, state)
         await session.commit()
 
@@ -305,13 +305,13 @@ async def test_persist_intake_recommendation_never_touches_another_tenants_case(
     other_state = dict(state)
     other_state["tenant_id"] = str(other_tenant.tenant_id)
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(other_tenant.tenant_id)})
+        scope_session_to_tenant(session, other_tenant.tenant_id)
         with pytest.raises(IntakeValidationError):
             await persist_intake_recommendation(session, other_state)
 
     # O caso original permanece intacto, pertencente ao tenant correto.
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         case = await session.scalar(select(Case).where(Case.id == tenant_with_case.case_id))
         assert case is not None
         assert case.tenant_id == tenant_with_case.tenant_id
@@ -330,7 +330,7 @@ async def test_persist_intake_recommendation_persists_and_is_auditable(
     result = await graph.ainvoke(state, context=IntakeContext(llm_client=stub))
 
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         case = await persist_intake_recommendation(session, result)
 
         from orchestrator.checkpoints import save_checkpoint

@@ -81,6 +81,18 @@ class IntakeReviewRequest(BaseModel):
         return self
 
 
+class CaseStageAdvanceRequest(BaseModel):
+    """Decisão humana de concluir a abertura do caso e avançar para Evidências.
+
+    Diferente de `IntakeReviewRequest`, não revisa nenhuma recomendação de IA
+    — é usada quando não há recomendação a revisar (ver
+    `app.services.intake_orchestration_service.advance_case_to_evidence`).
+    `notes` é opcional: o avanço em si já fica registrado em audit_logs.
+    """
+
+    notes: str | None = Field(default=None, max_length=4000)
+
+
 class AuditLogEntryResponse(BaseModel):
     """Representação pública de uma entrada de audit_logs, retornada pela API."""
 

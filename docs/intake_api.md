@@ -23,6 +23,7 @@ Todas as rotas ficam sob `/api/v1/cases/{case_id}/...`, exigem
 | POST | `/cases/{case_id}/intake/run` | admin, lawyer, paralegal | Executa coordinator + triage (orchestrator/graphs/intake.py). |
 | GET | `/cases/{case_id}/intake/result` | qualquer papel autenticado | Consulta o resultado mais recente da execução. |
 | POST | `/cases/{case_id}/intake/review` | admin, lawyer, paralegal | Registra aprovar/corrigir/devolver. |
+| POST | `/cases/{case_id}/intake/advance` | admin, lawyer, paralegal | Conclui a abertura do caso e avança para evidências, sem recomendação de IA. |
 | GET | `/cases/{case_id}/audit-log` | admin, lawyer, paralegal (não viewer) | Histórico de auditoria do caso. |
 
 `viewer` só lê (CLAUDE.md, seção 12) — com uma exceção: o histórico de
@@ -95,6 +96,30 @@ caminho correto nesses casos é completar o relato/checklist e chamar
 `approve`/`correct` nunca avançam o caso além do módulo `evidence` — nenhuma
 estratégia ou peça jurídica é aprovada aqui (CLAUDE.md, seção 2); esses
 módulos ainda nem existem.
+
+## Avanço da abertura do caso (`POST .../intake/advance`)
+
+A revisão acima pressupõe que exista uma recomendação de IA a revisar. Como
+nenhum provedor de IA está configurado neste ambiente, `POST .../intake/run`
+responde `503` e o caso **nunca** chega a `PENDING_APPROVAL` — sem esta rota,
+todo caso ficaria preso em `intake` indefinidamente, inclusive para `admin`.
+
+| Aspecto | Comportamento |
+|---|---|
+| Efeito no `Case` | `current_module=evidence`, `status=in_progress`, `human_review_required=False` |
+| `notes` | Opcional — vai em claro no `metadata` da auditoria, como em `review` |
+| Pré-condição | `current_module == intake` (senão `409`) e `CaseIntake` já registrado (senão `422`) |
+| Auditoria | `actor="human"`, ação `"avanço manual da abertura de caso para evidências"`, com `ai_triage_reviewed=False` |
+
+Não é uma decisão automática nem aprovação de conteúdo jurídico (CLAUDE.md,
+seção 2): é o advogado assumindo explicitamente que a abertura está completa.
+O `ai_triage_reviewed=False` no metadata deixa registrado no histórico que
+nenhuma recomendação de IA foi revisada nesse avanço — quem ler a auditoria
+depois não confunde os dois caminhos.
+
+Na interface, `AdvanceStageAction` some quando existe recomendação pendente
+(`status == pending_approval`): ali o caminho correto é aprovar/corrigir/
+devolver, não avançar por fora da revisão.
 
 ## Erros consistentes
 

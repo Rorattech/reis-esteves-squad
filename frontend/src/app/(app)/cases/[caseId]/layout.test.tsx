@@ -55,8 +55,9 @@ describe("CaseLayout", () => {
     await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
     expect(screen.getByText("Em andamento")).toBeInTheDocument();
     expect(screen.getByText("conteúdo da aba")).toBeInTheDocument();
-    // current_module = "evidence": Intake e Evidências liberadas, o restante bloqueado.
-    expect(screen.getByRole("link", { name: "Intake" })).toBeInTheDocument();
+    // current_module = "evidence": Abertura de caso e Evidências liberadas, o
+    // restante bloqueado.
+    expect(screen.getByRole("link", { name: "Abertura de caso" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Evidências" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Pesquisa" })).not.toBeInTheDocument();
     expect(screen.getByText("Pesquisa")).toHaveAttribute("aria-disabled", "true");

@@ -3,18 +3,18 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.models.audit_log import AuditLog
 from app.models.schemas.case_intake import CaseIntakeCreate, CaseIntakeUpdate
 from app.services.case_intake_service import get_intake, submit_intake, update_intake
-from tests.conftest import _SET_TENANT_GUC, TenantFixture
+from tests.conftest import TenantFixture
 
 
 async def test_submit_intake_creates_record_and_audits(tenant_with_case: TenantFixture) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         intake = await submit_intake(
             session,
             tenant_id=tenant_with_case.tenant_id,
@@ -47,7 +47,7 @@ async def test_submit_intake_creates_record_and_audits(tenant_with_case: TenantF
 
 async def test_submit_intake_returns_none_for_unknown_case(tenant: TenantFixture) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         result = await submit_intake(
             session,
             tenant_id=tenant.tenant_id,
@@ -61,7 +61,7 @@ async def test_submit_intake_returns_none_for_unknown_case(tenant: TenantFixture
 async def test_submit_intake_is_idempotent_per_case(tenant_with_case: TenantFixture) -> None:
     """Um segundo submit_intake para o mesmo caso substitui o relato, sem duplicar a linha."""
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         first = await submit_intake(
             session,
             tenant_id=tenant_with_case.tenant_id,
@@ -88,7 +88,7 @@ async def test_submit_intake_is_idempotent_per_case(tenant_with_case: TenantFixt
 
 async def test_update_intake_patches_only_provided_fields(tenant_with_case: TenantFixture) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         await submit_intake(
             session,
             tenant_id=tenant_with_case.tenant_id,
@@ -114,7 +114,7 @@ async def test_intake_of_one_tenant_is_not_visible_to_another(
     tenant_with_case: TenantFixture, other_tenant: TenantFixture
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant_with_case.tenant_id)})
+        scope_session_to_tenant(session, tenant_with_case.tenant_id)
         await submit_intake(
             session,
             tenant_id=tenant_with_case.tenant_id,
@@ -124,7 +124,7 @@ async def test_intake_of_one_tenant_is_not_visible_to_another(
         )
 
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(other_tenant.tenant_id)})
+        scope_session_to_tenant(session, other_tenant.tenant_id)
         result = await get_intake(
             session, tenant_id=other_tenant.tenant_id, case_id=tenant_with_case.case_id
         )

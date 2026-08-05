@@ -2,19 +2,19 @@
 
 import uuid
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 
-from app.core.db import async_session_factory
+from app.core.db import async_session_factory, scope_session_to_tenant
 from app.models.audit_log import AuditLog
 from app.models.enums import AuditActor
 from app.models.schemas.client import ClientCreate, ClientUpdate
 from app.services.client_service import create_client, update_client
-from tests.conftest import _SET_TENANT_GUC, TenantFixture
+from tests.conftest import TenantFixture
 
 
 async def test_create_client_persists_and_audits(tenant: TenantFixture) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         client = await create_client(
             session,
             tenant_id=tenant.tenant_id,
@@ -41,7 +41,7 @@ async def test_create_client_persists_and_audits(tenant: TenantFixture) -> None:
 
 async def test_update_client_changes_fields_and_audits(tenant: TenantFixture) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         client = await create_client(
             session,
             tenant_id=tenant.tenant_id,
@@ -70,7 +70,7 @@ async def test_update_client_changes_fields_and_audits(tenant: TenantFixture) ->
 
 async def test_update_client_returns_none_for_unknown_client(tenant: TenantFixture) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         result = await update_client(
             session,
             tenant_id=tenant.tenant_id,
@@ -85,7 +85,7 @@ async def test_client_of_one_tenant_is_not_visible_to_another(
     tenant: TenantFixture, other_tenant: TenantFixture
 ) -> None:
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(tenant.tenant_id)})
+        scope_session_to_tenant(session, tenant.tenant_id)
         client = await create_client(
             session,
             tenant_id=tenant.tenant_id,
@@ -98,7 +98,7 @@ async def test_client_of_one_tenant_is_not_visible_to_another(
     # passando tenant_id=other_tenant.tenant_id ao serviço, a sessão do banco
     # está escopada para other_tenant via app.current_tenant.
     async with async_session_factory() as session:
-        await session.execute(text(_SET_TENANT_GUC), {"t": str(other_tenant.tenant_id)})
+        scope_session_to_tenant(session, other_tenant.tenant_id)
         result = await update_client(
             session,
             tenant_id=other_tenant.tenant_id,

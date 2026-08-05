@@ -7,7 +7,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { useCase } from "@/hooks/useCase";
 import { CASE_AREA_LABELS, FRAUD_TYPE_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
-import { CASE_STAGES } from "@/lib/caseStages";
+import { stageLabel } from "@/lib/caseStages";
 
 export default function CaseOverviewPage() {
   const params = useParams<{ caseId: string }>();
@@ -18,7 +18,7 @@ export default function CaseOverviewPage() {
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!caseData) return null;
 
-  const currentStage = CASE_STAGES.find((stage) => stage.module === caseData.current_module);
+  const currentStageLabel = stageLabel(caseData.current_module);
 
   return (
     <dl className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:grid-cols-2">
@@ -28,7 +28,7 @@ export default function CaseOverviewPage() {
       </div>
       <div>
         <dt className="text-xs font-medium uppercase text-slate-500">Etapa atual</dt>
-        <dd className="mt-1 text-sm text-slate-900">{currentStage?.label ?? caseData.current_module}</dd>
+        <dd className="mt-1 text-sm text-slate-900">{currentStageLabel}</dd>
       </div>
       <div>
         <dt className="text-xs font-medium uppercase text-slate-500">Plataforma</dt>
