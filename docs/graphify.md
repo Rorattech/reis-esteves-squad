@@ -29,9 +29,14 @@ echo '[ -f "$HOME/.graphify/env" ] && source "$HOME/.graphify/env"' >> ~/.zshrc
 
 # 4. integrar ao Claude Code + hooks de git
 graphify install --platform claude   # skill global em ~/.claude/skills/graphify
-graphify claude install              # seção no CLAUDE.md + hooks PreToolUse
 graphify hook install                # post-commit / post-checkout + merge driver
 ```
+
+> **Não rode `graphify claude install` neste repositório.** A seção do `CLAUDE.md`
+> e os hooks `PreToolUse` já estão versionados e funcionam para toda a equipe. Esse
+> comando reescreve o `.claude/settings.json` gravando o caminho absoluto do binário
+> da *sua* máquina (`/home/<você>/.local/bin/graphify`), o que quebra o hook para
+> todos os outros devs no próximo `pull`. Ver a seção 7.
 
 > A chave **nunca** entra no repositório. Ela vive em `~/.graphify/env` com permissão
 > `600`, seguindo a seção 12 do `CLAUDE.md` (nenhum segredo hardcoded).
@@ -47,7 +52,26 @@ graphify hook install                # post-commit / post-checkout + merge drive
 | `graphify-out/graph.html`, `GRAPH_REPORT.md` | não | derivados, regeráveis a partir do `graph.json` |
 | `.gitattributes` | sim | registra o merge driver do `graph.json` |
 | `.claude/settings.json` | sim | hooks PreToolUse compartilhados pela dupla |
+| `.claude/hooks/graphify-guard.sh` | sim | resolve o binário do graphify por máquina |
 | `~/.graphify/env` | **nunca** | contém a chave da API |
+
+### Por que existe o `graphify-guard.sh`
+
+O que é versionado precisa valer para todas as máquinas; o caminho do binário do
+graphify não vale. O `settings.json` chama sempre o mesmo wrapper relativo ao
+projeto:
+
+```json
+"command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/graphify-guard.sh\" search"
+```
+
+e o wrapper procura o `graphify` no `PATH`, depois nos caminhos típicos de
+instalação (`~/.local/bin`, venv do pipx, `/usr/local/bin`, `/opt/homebrew/bin`).
+Se não achar nenhum, **sai com código 0 e sem mensagem** — quem ainda não instalou
+a CLI simplesmente trabalha sem o enriquecimento de contexto, em vez de tomar erro
+de hook a cada comando.
+
+Para desligar o hook pontualmente, sem editar nada: `GRAPHIFY_HOOK_DISABLE=1`.
 
 ### Merge driver
 
@@ -145,3 +169,39 @@ runtime sem reinstalar. Para desligar: `graphify claude uninstall`.
   re-execução de `graphify extract .` os reprocessa.
 - O grafo indexa **estrutura**, não semântica jurídica. Ele não substitui o
   `CLAUDE.md` nem os prompts em `prompts/` como fonte de regras de negócio.
+
+---
+
+## 7. Problemas comuns
+
+### `PreToolUse:Bash hook error ... /home/<alguem>/.local/bin/graphify: not found`
+
+Alguém rodou `graphify claude install` e comitou o `.claude/settings.json` com o
+caminho absoluto da própria máquina. Corrija restaurando o wrapper:
+
+```json
+"command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/graphify-guard.sh\" search"
+"command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/graphify-guard.sh\" read"
+```
+
+O erro é **não bloqueante**: o Claude continua funcionando, apenas sem o contexto
+do grafo. Mas polui toda chamada de ferramenta, então vale corrigir na hora.
+
+### `graphify: command not found` ao rodar `make graph-update`
+
+A CLI não está instalada nessa máquina. Rode o passo 1 da seção 1. O grafo em si
+(`graphify-out/graph.json`) vem pelo `pull` e o Claude consegue lê-lo, mas sem a
+CLI você não consegue nem consultar (`query`/`path`/`explain`) nem atualizar.
+
+### Conflito no `graphify-out/graph.json`
+
+Você não rodou `graphify hook install` nesta máquina — o merge driver mora no
+`.git/config` local e não viaja pelo `push`. Resolva com `graphify update .` e
+comite o resultado; depois instale o driver para não repetir.
+
+### O hook dispara mas o `graphify query` falha
+
+Provável falta da chave da API. Confira `~/.graphify/env` (seção 1, passo 2) e se
+o seu shell realmente carrega o arquivo (`echo $GEMINI_API_KEY`). Note que
+`query`/`path`/`explain` sobre um grafo já construído não custam API — só a
+extração semântica (`extract`, `cluster-only`) precisa da chave.

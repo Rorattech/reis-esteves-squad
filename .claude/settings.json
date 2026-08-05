@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/alfyt/.local/bin/graphify hook-guard search"
+            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/graphify-guard.sh\" search"
           }
         ]
       },
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/alfyt/.local/bin/graphify hook-guard read"
+            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/graphify-guard.sh\" read"
           }
         ]
       }

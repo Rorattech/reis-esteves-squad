@@ -1,1 +1,5 @@
 graphify-out/graph.json merge=graphify
+
+# Scripts de hook precisam de LF mesmo em checkout Windows — CRLF no shebang
+# quebra o interpretador ("bad interpreter: /bin/sh^M").
+*.sh text eol=lf
