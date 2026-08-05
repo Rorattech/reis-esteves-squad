@@ -12,7 +12,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAuth } from "@/hooks/useAuth";
 import { useCases } from "@/hooks/useCases";
 import { CASE_STATUS_LABELS, FRAUD_TYPE_LABELS } from "@/lib/caseLabels";
-import { stageLabel } from "@/lib/caseStages";
+import { CASE_STAGES, stageLabel, stageNumber } from "@/lib/caseStages";
 import { canDeleteCase, canWriteCase } from "@/lib/roles";
 import type { CaseStatus } from "@/types/api";
 
@@ -158,7 +158,12 @@ export default function CasesPage() {
                         <StatusBadge status={item.status} />
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {stageLabel(item.current_module)}
+                        {/* Número + nome: a posição no workflow deixa claro o
+                            quanto o caso já andou, sem abrir o caso. */}
+                        <span className="mr-1 text-xs text-slate-400">
+                          {stageNumber(item.current_module)}/{CASE_STAGES.length}
+                        </span>
+                        <span>{stageLabel(item.current_module)}</span>
                       </td>
                       <td className="px-4 py-3 text-slate-500">
                         {new Date(item.updated_at).toLocaleDateString("pt-BR")}

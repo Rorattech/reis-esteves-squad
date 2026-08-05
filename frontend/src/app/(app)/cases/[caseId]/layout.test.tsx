@@ -13,9 +13,15 @@ vi.mock("@/services/api", async () => {
   return { ...actual, api: { ...actual.api, getCase: getCaseMock } };
 });
 
+const CASE_ID = "44444444-4444-4444-4444-444444444444";
+const BASE_PATH = `/cases/${CASE_ID}`;
+
+/** Aba aberta no momento — cada teste ajusta para simular a URL visitada. */
+let pathname = BASE_PATH;
+
 vi.mock("next/navigation", () => ({
   useParams: () => ({ caseId: "44444444-4444-4444-4444-444444444444" }),
-  usePathname: () => "/cases/44444444-4444-4444-4444-444444444444",
+  usePathname: () => pathname,
 }));
 
 function makeCase(overrides: Partial<Case> = {}): Case {
@@ -40,6 +46,7 @@ function makeCase(overrides: Partial<Case> = {}): Case {
 
 beforeEach(() => {
   getCaseMock.mockReset();
+  pathname = BASE_PATH;
 });
 
 describe("CaseLayout", () => {
@@ -61,6 +68,73 @@ describe("CaseLayout", () => {
     expect(screen.getByRole("link", { name: "Evidências" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Pesquisa" })).not.toBeInTheDocument();
     expect(screen.getByText("Pesquisa")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("nomeia a situação de cada etapa em texto, não só em cor", async () => {
+    getCaseMock.mockResolvedValue(makeCase());
+
+    render(
+      <CaseLayout>
+        <p>conteúdo da aba</p>
+      </CaseLayout>,
+    );
+
+    // current_module = "evidence": 1 concluída, 1 atual, 4 bloqueadas.
+    await waitFor(() => expect(screen.getAllByText("Concluída")).toHaveLength(1));
+    expect(screen.getAllByText("Etapa atual")).toHaveLength(1);
+    expect(screen.getAllByText("Bloqueada")).toHaveLength(4);
+  });
+
+  it("orienta a próxima ação com link para a etapa atual quando o advogado está em outra aba", async () => {
+    getCaseMock.mockResolvedValue(makeCase());
+
+    render(
+      <CaseLayout>
+        <p>conteúdo da aba</p>
+      </CaseLayout>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Etapa 2 de 6 · Evidências")).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("link", { name: /Abrir a etapa Evidências/ })).toHaveAttribute(
+      "href",
+      `${BASE_PATH}/evidencias`,
+    );
+  });
+
+  it("não repete o botão de próxima ação quando a aba aberta já é a da etapa atual", async () => {
+    pathname = `${BASE_PATH}/evidencias`;
+    getCaseMock.mockResolvedValue(makeCase());
+
+    render(
+      <CaseLayout>
+        <p>conteúdo da aba</p>
+      </CaseLayout>,
+    );
+
+    await waitFor(() => expect(screen.getByText("conteúdo da aba")).toBeInTheDocument());
+    expect(screen.getByText("Etapa 2 de 6 · Evidências")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Abrir a etapa Evidências/ })).not.toBeInTheDocument();
+  });
+
+  it("explica a etapa bloqueada aberta por URL direta em vez de mostrar a aba vazia", async () => {
+    pathname = `${BASE_PATH}/minuta`;
+    getCaseMock.mockResolvedValue(makeCase());
+
+    render(
+      <CaseLayout>
+        <p>conteúdo da aba</p>
+      </CaseLayout>,
+    );
+
+    expect(await screen.findByText("Minuta ainda não foi liberada")).toBeInTheDocument();
+    // O conteúdo da etapa bloqueada não é renderizado.
+    expect(screen.queryByText("conteúdo da aba")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ir para Evidências" })).toHaveAttribute(
+      "href",
+      `${BASE_PATH}/evidencias`,
+    );
   });
 
   it("mostra acesso negado (sem vazar detalhes) quando o caso não existe para o tenant", async () => {

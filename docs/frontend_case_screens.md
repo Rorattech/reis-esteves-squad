@@ -231,3 +231,102 @@ com o resto do código que sempre importa tudo explicitamente), isso nunca
 acontecia sozinho. `vitest.setup.ts` registra `afterEach(cleanup)`
 manualmente — sem isso, o DOM de um teste vazava para o próximo
 (elementos duplicados, mocks de estado obsoletos).
+
+---
+
+## Navegação de etapas (revisão de usabilidade)
+
+A primeira versão desta fatia comunicava a etapa do caso apenas por destaque
+de cor na linha do tempo, e a única forma de descobrir **como** passar de
+fase era entrar na aba certa e encontrar o formulário lá dentro. Depois de
+criar um caso o advogado caía na Visão geral — uma tabela de dados, sem
+nenhuma ação — com as abas seguintes bloqueadas e nenhuma explicação: a
+sensação relatada foi de caso "travado". O fluxo do backend estava completo
+(`POST .../intake/review` e `POST .../intake/advance`); o que faltava era
+interface.
+
+Nada disso mudou quem decide a etapa: `Case.current_module` continua sendo
+definido só pelo backend, e a interface segue não simulando avanço
+(CLAUDE.md, seção 16).
+
+### `src/lib/caseStages.ts` — orientação derivada do estado do backend
+
+- `stageProgress(currentModule, stage)` → `"done" | "current" | "locked"`,
+  com `STAGE_PROGRESS_LABELS` para nomear a situação em texto (não só em
+  cor). Um teste garante a coerência com `isStageUnlocked`: só etapa
+  `locked` deixa de ser navegável.
+- `stageNumber` / `stageForSegment` / `stageFor` — posição no workflow e
+  tradução rota ⇄ etapa em um único lugar.
+- `stageGuidance(caseData)` — a partir de `current_module` + `status`,
+  devolve onde o caso está (`"Etapa 2 de 6 · Evidências"`), o que fazer
+  agora, o rótulo do botão e `notImplementedYet`. Os textos distinguem os
+  dois caminhos reais de saída da abertura: revisar a recomendação da
+  triagem (`status === "pending_approval"`) ou concluir a abertura
+  manualmente quando não há recomendação a revisar.
+
+### `CaseTimeline.tsx` — stepper explícito
+
+Cada etapa passou a mostrar número (ou ✓ concluída / 🔒 bloqueada), nome e a
+situação escrita embaixo. A aba aberta é marcada por contorno, separando os
+dois sinais que antes se confundiam: **cor = progresso do caso**, **contorno
+= aba que você está vendo**. Abaixo do stepper, uma linha diz em que etapa o
+caso está e que as seguintes destravam pelo backend.
+
+O número fica em um `<span aria-hidden>` **irmão** do link/label, não filho:
+o nome acessível de cada etapa continua sendo exatamente o label
+(`getByRole("link", { name: "Evidências" })`), e a etapa bloqueada continua
+sendo um `<span aria-disabled="true">` cujo texto é só o label.
+
+### `CaseStageGuide.tsx` (novo) — "o que fazer agora"
+
+Cartão fixo no layout do caso, acima do conteúdo da aba: posição no
+workflow, ação de avanço e botão para a aba onde a ação existe. O botão é
+omitido (`showCta={false}`) quando o advogado já está na aba da etapa atual —
+lá a ação está no próprio conteúdo. Para as etapas sem interface (Pesquisa,
+Estratégia, Minuta, Revisão) o texto diz que o módulo não existe ainda, em
+vez de prometer trabalho a fazer.
+
+### `CaseStageLockedNotice.tsx` (novo) — etapa bloqueada por URL
+
+A linha do tempo não linka etapas futuras, mas a URL sempre continuou
+acessível (link salvo, botão voltar, digitação) e abria a vitrine vazia do
+`ModulePlaceholder`, que soa como "módulo não existe" em vez de "etapa ainda
+não liberada". O layout agora detecta segmento de etapa bloqueada e mostra o
+motivo + botão para a etapa atual, no lugar do conteúdo da aba.
+
+### Aba Abertura de caso e lista
+
+- `intake/page.tsx`: seções numeradas (Passo 1 relato → Passo 2 triagem,
+  opcional → Passo 3 revisão humana), com o passo 3 dizendo explicitamente
+  que é ali que o caso passa de fase.
+- `AdvanceStageAction.tsx`: com recomendação pendente o card não desaparece
+  mais sem explicação — passa a apontar que o caminho é aprovar/corrigir a
+  triagem acima (pendência de revisão nunca fica escondida).
+- `cases/page.tsx`: a coluna "Etapa atual" mostra `2/6 · Evidências`, dando
+  a posição no workflow sem abrir o caso.
+
+### Cobertura de teste
+
+`src/lib/caseStages.test.ts` (novo, 9 casos): classificação de etapas,
+coerência com `isStageUnlocked`, numeração, resolução de segmento e os
+textos de orientação por estado (abertura sem recomendação, recomendação
+pendente, evidências, etapa não implementada, caso arquivado).
+
+`src/components/cases/CaseStageGuide.test.tsx` (novo, 5 casos): posição,
+ação e href por etapa/status; ausência do botão na aba da própria etapa;
+etapa não implementada.
+
+`[caseId]/layout.test.tsx`: situação de cada etapa nomeada em texto
+(1 concluída / 1 atual / 4 bloqueadas), orientação com link quando se está
+em outra aba, ausência do botão na aba da etapa atual, e etapa bloqueada
+aberta por URL direta (conteúdo da aba não renderizado).
+
+### Nota de ambiente
+
+`jsdom@30` depende de `undici@8`, que exige Node `>=22.19.0`; o ambiente de
+desenvolvimento usado aqui roda Node 20.20.1, onde `npx vitest run` falha no
+startup (`webidl.util.markAsUncloneable is not a function`) antes de executar
+qualquer teste. A suíte desta revisão foi rodada em Node 22 via container
+(`node:22-bookworm-slim`) — 87 testes, todos passando, mais `tsc --noEmit` e
+`eslint src --max-warnings=0` limpos. Vale alinhar a versão de Node do
+projeto (`.nvmrc`/engines) numa próxima passada.

@@ -5,12 +5,15 @@ import { useParams, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { AccessDeniedState } from "@/components/ui/AccessDeniedState";
+import { CaseStageGuide } from "@/components/cases/CaseStageGuide";
+import { CaseStageLockedNotice } from "@/components/cases/CaseStageLockedNotice";
 import { CaseTimeline } from "@/components/cases/CaseTimeline";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { HumanReviewNotice } from "@/components/ui/HumanReviewNotice";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useCase } from "@/hooks/useCase";
+import { isStageUnlocked, stageFor, stageForSegment } from "@/lib/caseStages";
 
 const META_TABS = [
   { segment: "", label: "Visão geral" },
@@ -23,6 +26,8 @@ export default function CaseLayout({ children }: { children: ReactNode }) {
   const { case: caseData, isLoading, error, notFound, reload } = useCase(params.caseId);
   const basePath = `/cases/${params.caseId}`;
   const activeSegment = pathname.slice(basePath.length).replace(/^\//, "");
+  /** Etapa que a URL atual aponta — null nas abas que não são etapa (visão geral, histórico). */
+  const openedStage = stageForSegment(activeSegment);
 
   return (
     <div className="space-y-4">
@@ -73,7 +78,25 @@ export default function CaseLayout({ children }: { children: ReactNode }) {
             </nav>
           </div>
 
-          <div>{children}</div>
+          {/* O botão só aparece quando levaria a algum lugar: na aba da própria
+              etapa atual, a ação já está no conteúdo abaixo. */}
+          <CaseStageGuide
+            caseData={caseData}
+            basePath={basePath}
+            showCta={activeSegment !== stageFor(caseData.current_module).segment}
+          />
+
+          <div>
+            {openedStage && !isStageUnlocked(caseData.current_module, openedStage) ? (
+              <CaseStageLockedNotice
+                lockedStage={openedStage}
+                currentModule={caseData.current_module}
+                basePath={basePath}
+              />
+            ) : (
+              children
+            )}
+          </div>
         </>
       )}
     </div>

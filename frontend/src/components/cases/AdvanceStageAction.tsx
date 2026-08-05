@@ -46,7 +46,19 @@ export function AdvanceStageAction({
   const alreadyAdvanced = caseData.current_module !== "intake";
   const hasPendingRecommendation = caseData.status === "pending_approval";
 
-  if (!canWrite || alreadyAdvanced || hasPendingRecommendation) return null;
+  if (!canWrite || alreadyAdvanced) return null;
+
+  // Com recomendação pendente, avançar por fora dela esconderia uma pendência
+  // de revisão (CLAUDE.md, seção 16) — em vez de sumir sem explicação, a tela
+  // aponta qual é o caminho certo para o caso passar de fase.
+  if (hasPendingRecommendation) {
+    return (
+      <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        Para levar este caso a Evidências, aprove ou corrija a recomendação da triagem acima. Enquanto
+        houver recomendação pendente, não existe atalho de avanço manual.
+      </p>
+    );
+  }
 
   async function handleConfirm() {
     setConfirmOpen(false);

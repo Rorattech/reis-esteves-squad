@@ -74,9 +74,11 @@ export default function CaseIntakePage() {
   return (
     <div className="space-y-8">
       <section>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Passo 1 de 3</p>
         <h2 className="text-base font-semibold text-slate-900">Relato inicial</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Texto livre do cliente + campos estruturados coletados no primeiro contato.
+          Texto livre do cliente + campos estruturados coletados no primeiro contato. Sem o relato
+          salvo, os passos 2 e 3 ficam bloqueados.
         </p>
         <div className="mt-3">
           <IntakeNarrativeForm
@@ -89,10 +91,14 @@ export default function CaseIntakePage() {
       </section>
 
       <section>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Passo 2 de 3 · opcional
+        </p>
         <h2 className="text-base font-semibold text-slate-900">Triagem</h2>
         <p className="mt-1 text-sm text-slate-500">
           Classifica plataforma, modalidade e urgência, e monta o checklist de documentos — sempre
-          como recomendação revisável.
+          como recomendação revisável. Se você preferir conduzir a abertura sem a IA, pule para o
+          passo 3.
         </p>
         <div className="mt-3 space-y-4">
           <RunTriageAction
@@ -115,9 +121,12 @@ export default function CaseIntakePage() {
       </section>
 
       <section>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Passo 3 de 3</p>
         <h2 className="text-base font-semibold text-slate-900">Revisão humana</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Aprovar, corrigir ou devolver a recomendação da triagem para complementação.
+          É aqui que o caso passa de fase: aprovar ou corrigir a recomendação da triagem — ou
+          concluir a abertura manualmente, quando não há recomendação a revisar — libera a etapa de
+          Evidências. Devolver para complementação mantém o caso nesta etapa.
         </p>
         <div className="mt-3 space-y-4">
           <IntakeReviewForm
