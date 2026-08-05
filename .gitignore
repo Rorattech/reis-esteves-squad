@@ -23,3 +23,9 @@ out/
 .DS_Store
 .idea/
 .vscode/
+
+# Graphify — versionamos apenas o graph.json (ver .gitattributes / merge driver)
+graphify-out/*
+!graphify-out/graph.json
+.claude/settings.local.json
+.claude/*.graphify-bak

@@ -7,7 +7,8 @@ COMPOSE := cd infra && docker compose --env-file ../.env
 
 .PHONY: help env up down down-v build rebuild restart ps logs \
         sh-backend sh-frontend sh-postgres sh-redis sh-n8n \
-        psql redis-cli migrations test lint fmt clean
+        psql redis-cli migrations test lint fmt clean \
+        graph graph-update graph-watch graph-watch-stop graph-report
 
 help: ## Lista os comandos disponíveis
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -77,3 +78,28 @@ fmt: ## Formata o código do backend (black)
 	$(COMPOSE) exec backend black .
 
 clean: down-v ## Alias de down-v — para os containers e apaga os volumes
+
+# --- Graphify (grafo de conhecimento do projeto) — ver docs/graphify.md ---------
+# A chave da API vive em ~/.graphify/env (chmod 600), nunca no repositório.
+GRAPHIFY_ENV := [ -f "$$HOME/.graphify/env" ] && source "$$HOME/.graphify/env";
+GRAPHIFY_PID := $$HOME/.graphify/watch-reis-esteves.pid
+
+graph-update: ## Atualiza o grafo a partir do código (AST local, sem custo de API)
+	graphify update .
+
+graph: ## Reconstrói o grafo completo incluindo docs (usa a API do Gemini, ~4 centavos de dólar)
+	$(GRAPHIFY_ENV) graphify extract . --backend gemini
+
+graph-report: ## Regera GRAPH_REPORT.md e renomeia as comunidades
+	$(GRAPHIFY_ENV) graphify cluster-only .
+
+graph-watch: ## Sobe o watcher que atualiza o grafo a cada mudança de código
+	@$(GRAPHIFY_ENV) nohup graphify watch . > "$$HOME/.graphify/watch-reis-esteves.log" 2>&1 & \
+	 echo $$! > $(GRAPHIFY_PID); \
+	 echo "watcher iniciado (PID $$(cat $(GRAPHIFY_PID))) — log em ~/.graphify/watch-reis-esteves.log"
+
+graph-watch-stop: ## Para o watcher do grafo
+	@if [ -f $(GRAPHIFY_PID) ]; then \
+	   kill "$$(cat $(GRAPHIFY_PID))" 2>/dev/null && echo "watcher parado"; \
+	   rm -f $(GRAPHIFY_PID); \
+	 else echo "nenhum watcher registrado"; fi
