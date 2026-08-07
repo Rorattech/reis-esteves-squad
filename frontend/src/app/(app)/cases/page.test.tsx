@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +6,7 @@ import { ApiError } from "@/services/api";
 import type { Case, User } from "@/types/api";
 
 import CasesPage from "./page";
+import { makeCase, makeClientSummary } from "@/test/factories";
 
 const { listCasesMock, deleteCaseMock, pushMock } = vi.hoisted(() => ({
   listCasesMock: vi.fn(),
@@ -26,25 +27,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
 const useAuthMock = vi.fn();
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => useAuthMock() }));
 
-function makeCase(overrides: Partial<Case> = {}): Case {
-  return {
-    id: "11111111-1111-1111-1111-111111111111",
-    tenant_id: "tenant-1",
-    user_id: "user-1",
-    client_id: null,
-    area: null,
-    matter: null,
-    platform: "whatsapp",
-    fraud_type: "pix",
-    urgency: "high",
-    status: "in_progress",
-    current_module: "intake",
-    human_review_required: true,
-    created_at: "2026-07-01T10:00:00Z",
-    updated_at: "2026-07-02T10:00:00Z",
-    ...overrides,
-  };
-}
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -69,17 +51,25 @@ beforeEach(() => {
 describe("CasesPage", () => {
   it("lista os casos do tenant autenticado", async () => {
     listCasesMock.mockResolvedValue([
-      makeCase({ platform: "whatsapp", fraud_type: "pix" }),
-      makeCase({ id: "22222222-2222-2222-2222-222222222222", platform: "shopee", fraud_type: "marketplace" }),
+      makeCase({ client: makeClientSummary() }),
+      makeCase({
+        id: "22222222-2222-2222-2222-222222222222",
+        code: "CAS-2026-000002",
+        platform: "Shopee",
+      }),
     ]);
 
     render(<CasesPage />);
 
     expect(screen.getByText("Carregando casos...")).toBeInTheDocument();
 
-    await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
-    expect(screen.getByText("shopee")).toBeInTheDocument();
-    expect(listCasesMock).toHaveBeenCalledTimes(1);
+    // O advogado enxerga código e nome — nenhum UUID aparece na tela.
+    await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
+    expect(screen.getByText("CAS-2026-000002")).toBeInTheDocument();
+    expect(screen.getByText("Maria Souza de Oliveira")).toBeInTheDocument();
+    expect(
+      screen.queryByText("11111111-1111-1111-1111-111111111111"),
+    ).not.toBeInTheDocument();
   });
 
   it("mostra o estado vazio com ação de criar caso quando não há casos", async () => {
@@ -114,27 +104,46 @@ describe("CasesPage", () => {
     listCasesMock.mockResolvedValueOnce([makeCase()]);
     await userEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
 
-    await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
     expect(listCasesMock).toHaveBeenCalledTimes(2);
   });
 
-  it("filtra a lista já carregada por busca e por status, sem nova chamada à API", async () => {
-    listCasesMock.mockResolvedValue([
-      makeCase({ platform: "whatsapp", status: "in_progress" }),
-      makeCase({
-        id: "22222222-2222-2222-2222-222222222222",
-        platform: "shopee",
-        status: "pending_approval",
-      }),
-    ]);
+  it("delega busca e filtro ao backend, que é quem enxerga o nome do cliente", async () => {
+    listCasesMock.mockResolvedValue([makeCase({ client: makeClientSummary() })]);
 
     render(<CasesPage />);
-    await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText("Buscar casos"), "shopee");
-    expect(screen.queryByText("whatsapp")).not.toBeInTheDocument();
-    expect(screen.getByText("shopee")).toBeInTheDocument();
-    expect(listCasesMock).toHaveBeenCalledTimes(1);
+    listCasesMock.mockResolvedValue([]);
+    // fireEvent.change em vez de userEvent.type: o que importa aqui é o termo
+    // final chegar ao backend, não a digitação tecla a tecla (que a busca
+    // debounced descarta de propósito).
+    fireEvent.change(screen.getByLabelText("Buscar casos"), { target: { value: "Maria" } });
+
+    // Busca no servidor: filtrar aqui exigiria baixar a base inteira com os nomes.
+    // waitFor porque a busca é debounced — as teclas intermediárias não
+    // disparam request própria.
+    await waitFor(() =>
+      expect(listCasesMock.mock.lastCall?.[0]).toMatchObject({ search: "Maria" }),
+    );
+    expect(screen.getByText("Nenhum caso encontrado")).toBeInTheDocument();
+  });
+
+  it("mantém o campo de busca quando o filtro não encontra nada", async () => {
+    // Sem essa distinção, "nada encontrado" cairia no estado de escritório
+    // vazio e esconderia a busca, deixando o advogado sem saída.
+    listCasesMock.mockResolvedValue([makeCase()]);
+    render(<CasesPage />);
+    await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
+
+    listCasesMock.mockResolvedValue([]);
+    fireEvent.change(screen.getByLabelText("Buscar casos"), {
+      target: { value: "inexistente" },
+    });
+
+    await waitFor(() => expect(screen.getByText("Nenhum caso encontrado")).toBeInTheDocument());
+    expect(screen.getByLabelText("Buscar casos")).toBeInTheDocument();
+    expect(screen.queryByText("Nenhum caso ainda")).not.toBeInTheDocument();
   });
 
   it("mostra a etapa de abertura com o nome usado pelo advogado", async () => {
@@ -151,10 +160,10 @@ describe("CasesPage", () => {
       listCasesMock.mockResolvedValue([makeCase()]);
 
       render(<CasesPage />);
-      await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
 
       // Célula que não é link nem botão — só a linha inteira pode responder.
-      await userEvent.click(screen.getByText("Golpe PIX"));
+      await userEvent.click(screen.getByText("Golpe do PIX"));
 
       expect(pushMock).toHaveBeenCalledWith("/cases/11111111-1111-1111-1111-111111111111");
     });
@@ -163,9 +172,9 @@ describe("CasesPage", () => {
       listCasesMock.mockResolvedValue([makeCase()]);
 
       render(<CasesPage />);
-      await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
 
-      const editLink = screen.getByRole("link", { name: "Editar caso whatsapp" });
+      const editLink = screen.getByRole("link", { name: "Editar caso CAS-2026-000001" });
       expect(editLink).toHaveAttribute(
         "href",
         "/cases/11111111-1111-1111-1111-111111111111/editar",
@@ -180,9 +189,9 @@ describe("CasesPage", () => {
       deleteCaseMock.mockResolvedValue(undefined);
 
       render(<CasesPage />);
-      await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
 
-      await userEvent.click(screen.getByRole("button", { name: "Excluir caso whatsapp" }));
+      await userEvent.click(screen.getByRole("button", { name: "Excluir caso CAS-2026-000001" }));
       expect(pushMock).not.toHaveBeenCalled();
 
       // Ação irreversível: só executa depois da confirmação explícita.
@@ -201,13 +210,13 @@ describe("CasesPage", () => {
       listCasesMock.mockResolvedValue([makeCase()]);
 
       render(<CasesPage />);
-      await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
 
-      await userEvent.click(screen.getByRole("button", { name: "Excluir caso whatsapp" }));
+      await userEvent.click(screen.getByRole("button", { name: "Excluir caso CAS-2026-000001" }));
       await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
 
       expect(deleteCaseMock).not.toHaveBeenCalled();
-      expect(screen.getByText("whatsapp")).toBeInTheDocument();
+      expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument();
     });
 
     it("mostra erro da API quando a exclusão falha e mantém o caso na lista", async () => {
@@ -215,15 +224,15 @@ describe("CasesPage", () => {
       deleteCaseMock.mockRejectedValue(new ApiError(403, "Usuário não tem papel autorizado."));
 
       render(<CasesPage />);
-      await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
 
-      await userEvent.click(screen.getByRole("button", { name: "Excluir caso whatsapp" }));
+      await userEvent.click(screen.getByRole("button", { name: "Excluir caso CAS-2026-000001" }));
       await userEvent.click(screen.getByRole("button", { name: "Excluir caso" }));
 
       expect(await screen.findByRole("alert")).toHaveTextContent(
         "Usuário não tem papel autorizado.",
       );
-      expect(screen.getByText("whatsapp")).toBeInTheDocument();
+      expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument();
     });
 
     it("não oferece exclusão para paralegal, que pode editar mas não excluir", async () => {
@@ -231,11 +240,11 @@ describe("CasesPage", () => {
       listCasesMock.mockResolvedValue([makeCase()]);
 
       render(<CasesPage />);
-      await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
 
-      expect(screen.getByRole("link", { name: "Editar caso whatsapp" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Editar caso CAS-2026-000001" })).toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Excluir caso whatsapp" }),
+        screen.queryByRole("button", { name: "Excluir caso CAS-2026-000001" }),
       ).not.toBeInTheDocument();
     });
 
@@ -244,11 +253,11 @@ describe("CasesPage", () => {
       listCasesMock.mockResolvedValue([makeCase()]);
 
       render(<CasesPage />);
-      await waitFor(() => expect(screen.getByText("whatsapp")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("CAS-2026-000001")).toBeInTheDocument());
 
-      expect(screen.queryByRole("link", { name: "Editar caso whatsapp" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Editar caso CAS-2026-000001" })).not.toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Excluir caso whatsapp" }),
+        screen.queryByRole("button", { name: "Excluir caso CAS-2026-000001" }),
       ).not.toBeInTheDocument();
     });
   });

@@ -193,9 +193,7 @@ async def _call_structured(
     return parsed, result
 
 
-async def coordinator(
-    state: CaseState, runtime: Runtime[IntakeContext]
-) -> dict[str, Any]:
+async def coordinator(state: CaseState, runtime: Runtime[IntakeContext]) -> dict[str, Any]:
     """Identifica escopo digital e classifica plataforma/modalidade/urgência preliminar.
 
     Sempre uma recomendação (CLAUDE.md, seção 2): quando o resultado é
@@ -317,16 +315,12 @@ async def triage(state: CaseState, runtime: Runtime[IntakeContext]) -> dict[str,
     )
 
     outcome: IntakeOutcome = (
-        "awaiting_information"
-        if parsed.requires_more_information
-        else "awaiting_human_review"
+        "awaiting_information" if parsed.requires_more_information else "awaiting_human_review"
     )
 
     metadata = build_prompt_audit_metadata(bundle)
     metadata["outcome"] = outcome
-    metadata["recommended_next_module"] = (
-        "evidence" if outcome == "awaiting_human_review" else None
-    )
+    metadata["recommended_next_module"] = "evidence" if outcome == "awaiting_human_review" else None
 
     audit_entry = create_audit_entry(
         actor_id="triage",
@@ -385,9 +379,7 @@ def build_intake_graph() -> CompiledStateGraph:
     return graph.compile()
 
 
-async def persist_intake_recommendation(
-    session: AsyncSession, state: CaseState
-) -> Case:
+async def persist_intake_recommendation(session: AsyncSession, state: CaseState) -> Case:
     """Grava no `Case` (SQLAlchemy) a recomendação mais recente do módulo Intake.
 
     Nunca marca o caso como aprovado — só registra platform/fraud_type/
@@ -409,16 +401,18 @@ async def persist_intake_recommendation(
     tenant_id = uuid.UUID(state["tenant_id"])
     case_id = uuid.UUID(state["case_id"])
 
-    case = await session.scalar(
-        select(Case).where(Case.tenant_id == tenant_id, Case.id == case_id)
-    )
+    case = await session.scalar(select(Case).where(Case.tenant_id == tenant_id, Case.id == case_id))
     if case is None:
         raise IntakeValidationError(
             f"Caso {case_id} não encontrado para o tenant {tenant_id} — nada a persistir."
         )
 
-    case.platform = state["platform"]
-    case.fraud_type = FraudType(state["fraud_type"])
+    # platform/fraud_type NÃO são escritos aqui: desde a Fase 2.7 eles são
+    # rótulo e família derivados da entrada de catálogo escolhida pelo advogado
+    # (ver app/models/case.py), e a triagem não escolhe entrada de catálogo. A
+    # leitura do agente continua no CaseState e é exibida como recomendação —
+    # ela só vira classificação do caso quando um humano corrige explicitamente
+    # (IntakeReviewDecision.CORRECT), que é o modelo exigido por CLAUDE.md §2.
     case.urgency = UrgencyLevel(state["urgency"])
     if state.get("area"):
         case.area = CaseArea(state["area"])

@@ -13,13 +13,42 @@ class UserRole(str, enum.Enum):
 
 
 class FraudType(str, enum.Enum):
-    """Modalidade do golpe identificada no módulo de Intake (ver docs/architecture.md)."""
+    """Família da modalidade do golpe (ver docs/architecture.md).
+
+    Desde a Fase 2.7 este enum é a **família** para a qual toda entrada de
+    `fraud_modalities` aponta, não mais a classificação que o advogado escolhe
+    direto: o escritório cadastra modalidades livres ("golpe da falsa central")
+    e cada uma declara a qual destas famílias pertence. É o que mantém o
+    vocabulário aberto para o usuário e fechado para os agentes — o prompt do
+    specialist raciocina sobre estas 5 famílias (ver
+    prompts/digital/evidence/specialist.md) e não sobre texto arbitrário.
+    """
 
     PIX = "pix"
     MARKETPLACE = "marketplace"
     FAKE_PROFILE = "fake_profile"
     FAKE_LAWYER = "fake_lawyer"
     OTHER = "other"
+
+
+class PersonType(str, enum.Enum):
+    """Natureza jurídica do cliente — define se o documento é CPF ou CNPJ."""
+
+    INDIVIDUAL = "individual"
+    COMPANY = "company"
+
+
+class MaritalStatus(str, enum.Enum):
+    """Estado civil do cliente pessoa física, exigido na qualificação da peça
+    (CPC art. 319, II).
+    """
+
+    SINGLE = "single"
+    MARRIED = "married"
+    DIVORCED = "divorced"
+    WIDOWED = "widowed"
+    SEPARATED = "separated"
+    STABLE_UNION = "stable_union"
 
 
 class UrgencyLevel(str, enum.Enum):

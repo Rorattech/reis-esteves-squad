@@ -23,7 +23,10 @@ from app.models.case import Case
 from app.models.enums import CaseStatus, ExtractionOutcome, ModuleName
 from app.models.evidence_file import EvidenceFile
 from app.models.evidence_finding import EvidenceFindingRecord
-from app.models.schemas.evidence_analysis import EvidenceReviewDecision, EvidenceReviewRequest
+from app.models.schemas.evidence_analysis import (
+    EvidenceReviewDecision,
+    EvidenceReviewRequest,
+)
 from app.services.case_intake_service import get_intake
 from orchestrator.checkpoints import load_latest_checkpoint, save_checkpoint
 from orchestrator.graphs.evidence import EvidenceContext, build_evidence_graph
@@ -45,7 +48,14 @@ class EvidenceReviewConflictError(Exception):
 async def _get_case_for_tenant(
     session: AsyncSession, tenant_id: uuid.UUID, case_id: uuid.UUID
 ) -> Case | None:
-    return await session.scalar(select(Case).where(Case.tenant_id == tenant_id, Case.id == case_id))
+    # selectinload(Case.client): _build_initial_state lê a comarca do cliente
+    # para o CaseState, e um lazy load aqui estouraria MissingGreenlet no
+    # contexto async.
+    return await session.scalar(
+        select(Case)
+        .where(Case.tenant_id == tenant_id, Case.id == case_id)
+        .options(selectinload(Case.client))
+    )
 
 
 async def _load_evidence_records(
@@ -64,7 +74,9 @@ async def _load_evidence_records(
             (
                 extraction
                 for extraction in sorted(
-                    evidence.extractions, key=lambda extraction: extraction.created_at, reverse=True
+                    evidence.extractions,
+                    key=lambda extraction: extraction.created_at,
+                    reverse=True,
                 )
                 if extraction.outcome == ExtractionOutcome.SUCCEEDED
             ),
@@ -76,9 +88,9 @@ async def _load_evidence_records(
                 filename=evidence.original_filename,
                 mime_type=evidence.mime_type,
                 processing_status=evidence.status.value,
-                extracted_text=latest_success.extracted_text if latest_success else None,
-                extraction_confidence=latest_success.confidence if latest_success else None,
-                extraction_limitations=latest_success.limitations if latest_success else None,
+                extracted_text=(latest_success.extracted_text if latest_success else None),
+                extraction_confidence=(latest_success.confidence if latest_success else None),
+                extraction_limitations=(latest_success.limitations if latest_success else None),
             )
         )
     return records
@@ -99,7 +111,10 @@ def _build_initial_state(
     return CaseState(
         case_id=str(case.id),
         tenant_id=str(tenant_id),
+        case_code=case.code,
         narrative=narrative,
+        client_city=case.client.address_city if case.client else None,
+        client_state=case.client.address_state if case.client else None,
         platform=case.platform,
         fraud_type=case.fraud_type.value,
         urgency=case.urgency.value,
@@ -150,9 +165,7 @@ async def _persist_findings(
                 tenant_id=tenant_id,
                 case_id=case_id,
                 evidence_id=(
-                    uuid.UUID(finding.source_evidence_id)
-                    if finding.source_evidence_id
-                    else None
+                    uuid.UUID(finding.source_evidence_id) if finding.source_evidence_id else None
                 ),
                 agent=finding.agent,
                 category=finding.category,
@@ -168,7 +181,11 @@ async def _persist_findings(
 
 
 async def run_evidence(
-    session: AsyncSession, *, tenant_id: uuid.UUID, case_id: uuid.UUID, llm_client: LLMClient
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    case_id: uuid.UUID,
+    llm_client: LLMClient,
 ) -> tuple[Case, CaseState] | None:
     """Executa o grafo do módulo Evidence (documental + specialist) para um caso.
 

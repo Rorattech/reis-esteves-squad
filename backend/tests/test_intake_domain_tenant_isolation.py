@@ -9,10 +9,11 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.db import async_session_factory, scope_session_to_tenant
+from app.core.identifiers import CodeScope, next_code
 from app.models.case_document import CaseDocument
 from app.models.case_intake import CaseIntake
 from app.models.client import Client
-from tests.conftest import TenantFixture, login
+from tests.conftest import TenantFixture, case_payload, login
 
 
 async def test_rls_blocks_cross_tenant_read_of_clients(
@@ -20,7 +21,11 @@ async def test_rls_blocks_cross_tenant_read_of_clients(
 ) -> None:
     async with async_session_factory() as session:
         scope_session_to_tenant(session, tenant.tenant_id)
-        client = Client(tenant_id=tenant.tenant_id, full_name="Cliente do Tenant A")
+        client = Client(
+            tenant_id=tenant.tenant_id,
+            code=await next_code(session, tenant_id=tenant.tenant_id, scope=CodeScope.CLIENT),
+            full_name="Cliente do Tenant A",
+        )
         session.add(client)
         await session.commit()
         client_id = client.id
@@ -78,7 +83,9 @@ async def test_api_rejects_case_creation_with_client_id_of_another_tenant(
     async with async_session_factory() as session:
         scope_session_to_tenant(session, other_tenant.tenant_id)
         foreign_client = Client(
-            tenant_id=other_tenant.tenant_id, full_name="Cliente de Outro Tenant"
+            tenant_id=other_tenant.tenant_id,
+            code=await next_code(session, tenant_id=other_tenant.tenant_id, scope=CodeScope.CLIENT),
+            full_name="Cliente de Outro Tenant",
         )
         session.add(foreign_client)
         await session.commit()
@@ -87,12 +94,7 @@ async def test_api_rejects_case_creation_with_client_id_of_another_tenant(
     headers = await login(api_client, tenant)
     response = await api_client.post(
         "/api/v1/cases",
-        json={
-            "platform": "shopee",
-            "fraud_type": "marketplace",
-            "urgency": "medium",
-            "client_id": foreign_client_id,
-        },
+        json=await case_payload(api_client, headers, client_id=foreign_client_id),
         headers=headers,
     )
     assert response.status_code == 404
@@ -104,12 +106,7 @@ async def test_api_accepts_case_creation_with_client_id_of_same_tenant(
     headers = await login(api_client, tenant_with_client)
     response = await api_client.post(
         "/api/v1/cases",
-        json={
-            "platform": "shopee",
-            "fraud_type": "marketplace",
-            "urgency": "medium",
-            "client_id": str(tenant_with_client.client_id),
-        },
+        json=await case_payload(api_client, headers, client_id=str(tenant_with_client.client_id)),
         headers=headers,
     )
     assert response.status_code == 201, response.text

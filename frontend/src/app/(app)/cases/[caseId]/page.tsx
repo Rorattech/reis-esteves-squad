@@ -5,8 +5,10 @@ import { useParams } from "next/navigation";
 import { AccessDeniedState } from "@/components/ui/AccessDeniedState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
+import Link from "next/link";
+
 import { useCase } from "@/hooks/useCase";
-import { CASE_AREA_LABELS, FRAUD_TYPE_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
+import { CASE_AREA_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
 import { stageLabel } from "@/lib/caseStages";
 
 export default function CaseOverviewPage() {
@@ -24,7 +26,16 @@ export default function CaseOverviewPage() {
     <dl className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:grid-cols-2">
       <div>
         <dt className="text-xs font-medium uppercase text-slate-500">Cliente</dt>
-        <dd className="mt-1 text-sm text-slate-900">{caseData.client_id ?? "—"}</dd>
+        <dd className="mt-1 text-sm text-slate-900">
+          {caseData.client ? (
+            <Link href={`/clients/${caseData.client.id}`} className="hover:underline">
+              {caseData.client.full_name}
+              <span className="ml-2 text-xs text-slate-500">{caseData.client.code}</span>
+            </Link>
+          ) : (
+            "—"
+          )}
+        </dd>
       </div>
       <div>
         <dt className="text-xs font-medium uppercase text-slate-500">Etapa atual</dt>
@@ -36,9 +47,7 @@ export default function CaseOverviewPage() {
       </div>
       <div>
         <dt className="text-xs font-medium uppercase text-slate-500">Modalidade</dt>
-        <dd className="mt-1 text-sm text-slate-900">
-          {FRAUD_TYPE_LABELS[caseData.fraud_type] ?? caseData.fraud_type}
-        </dd>
+        <dd className="mt-1 text-sm text-slate-900">{caseData.fraud_modality.label}</dd>
       </div>
       <div>
         <dt className="text-xs font-medium uppercase text-slate-500">Área</dt>

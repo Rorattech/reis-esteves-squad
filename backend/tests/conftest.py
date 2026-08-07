@@ -35,20 +35,28 @@ _load_repo_root_env()
 
 import pytest_asyncio  # noqa: E402 — precisa vir depois de _load_repo_root_env()
 from httpx import ASGITransport, AsyncClient  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import select, text  # noqa: E402
 
 from app.core.db import (  # noqa: E402
     async_session_factory,
     scope_session_to_auth_bootstrap,
     scope_session_to_tenant,
 )
+from app.core.identifiers import CodeScope, next_code  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.case import Case  # noqa: E402
+from app.models.catalog import FraudModality, Platform  # noqa: E402
 from app.models.client import Client  # noqa: E402
-from app.models.enums import FraudType, UrgencyLevel, UserRole  # noqa: E402
+from app.models.enums import UrgencyLevel, UserRole  # noqa: E402
 from app.models.tenant import Tenant  # noqa: E402
 from app.models.user import User  # noqa: E402
+from app.services.catalog_service import ensure_catalog_seeded  # noqa: E402
+
+#: Entradas de catálogo padrão usadas como classificação default nos testes.
+#: São slugs semeados por app/core/catalog_defaults.py.
+DEFAULT_PLATFORM_SLUG = "whatsapp"
+DEFAULT_MODALITY_SLUG = "pix"
 
 
 class TenantFixture:
@@ -60,7 +68,10 @@ class TenantFixture:
         self.email = email
         self.password = password
         self.case_id: uuid.UUID | None = None
+        self.case_code: str | None = None
         self.client_id: uuid.UUID | None = None
+        self.platform_id: uuid.UUID | None = None
+        self.fraud_modality_id: uuid.UUID | None = None
 
 
 async def _create_tenant(role: UserRole = UserRole.ADMIN) -> TenantFixture:
@@ -92,7 +103,8 @@ async def _delete_tenant(tenant_id: uuid.UUID) -> None:
     async with async_session_factory() as session:
         scope_session_to_auth_bootstrap(session)
         await session.execute(
-            text("DELETE FROM tenants WHERE id = :tenant_id"), {"tenant_id": str(tenant_id)}
+            text("DELETE FROM tenants WHERE id = :tenant_id"),
+            {"tenant_id": str(tenant_id)},
         )
         await session.commit()
 
@@ -127,12 +139,90 @@ async def viewer_tenant() -> AsyncIterator[TenantFixture]:
         await _delete_tenant(fixture.tenant_id)
 
 
+async def seed_catalog(session, tenant_id: uuid.UUID) -> tuple[Platform, FraudModality]:
+    """Semeia o catálogo do tenant e devolve as entradas padrão dos testes.
+
+    Desde a Fase 2.7 abrir um caso exige uma entrada de `platforms` e uma de
+    `fraud_modalities` do próprio escritório — não há mais texto livre nem enum
+    direto (ver app/models/catalog.py).
+
+    Args:
+        session: Sessão já escopada para o tenant.
+        tenant_id: Tenant de teste.
+
+    Returns:
+        A plataforma e a modalidade padrão dos testes.
+    """
+    await ensure_catalog_seeded(session, tenant_id=tenant_id)
+    platform = await session.scalar(
+        select(Platform).where(
+            Platform.tenant_id == tenant_id, Platform.slug == DEFAULT_PLATFORM_SLUG
+        )
+    )
+    modality = await session.scalar(
+        select(FraudModality).where(
+            FraudModality.tenant_id == tenant_id,
+            FraudModality.slug == DEFAULT_MODALITY_SLUG,
+        )
+    )
+    return platform, modality
+
+
+async def create_case_row(session, tenant: TenantFixture, **overrides) -> Case:
+    """Cria um `Case` completo (código + catálogo) direto no banco.
+
+    Existe para os testes que precisam de um caso pronto sem passar pela API.
+    Os campos denormalizados `platform`/`fraud_type` são derivados das entradas
+    de catálogo, como a rota faz — nunca escritos direto.
+
+    Args:
+        session: Sessão já escopada para o tenant.
+        tenant: Fixture do tenant dono do caso.
+        **overrides: Campos a sobrescrever no `Case`.
+
+    Returns:
+        O caso criado, ainda não commitado.
+    """
+    platform, modality = await seed_catalog(session, tenant.tenant_id)
+    fields = {
+        "tenant_id": tenant.tenant_id,
+        "user_id": tenant.user_id,
+        "code": await next_code(session, tenant_id=tenant.tenant_id, scope=CodeScope.CASE),
+        "platform_id": platform.id,
+        "fraud_modality_id": modality.id,
+        "platform": platform.label,
+        "fraud_type": modality.family,
+        "urgency": UrgencyLevel.HIGH,
+    }
+    fields.update(overrides)
+    case = Case(**fields)
+    session.add(case)
+    await session.flush()
+    return case
+
+
+@pytest_asyncio.fixture
+async def tenant_with_catalog(tenant: TenantFixture) -> TenantFixture:
+    """Tenant de teste com o catálogo semeado e as entradas padrão à mão."""
+    async with async_session_factory() as session:
+        scope_session_to_tenant(session, tenant.tenant_id)
+        platform, modality = await seed_catalog(session, tenant.tenant_id)
+        await session.commit()
+        tenant.platform_id = platform.id
+        tenant.fraud_modality_id = modality.id
+    return tenant
+
+
 @pytest_asyncio.fixture
 async def tenant_with_client(tenant: TenantFixture) -> TenantFixture:
     """Tenant de teste com um cliente já cadastrado (útil para testes de intake)."""
     async with async_session_factory() as session:
         scope_session_to_tenant(session, tenant.tenant_id)
-        client = Client(tenant_id=tenant.tenant_id, full_name="Cliente Pytest")
+        client = Client(
+            tenant_id=tenant.tenant_id,
+            code=await next_code(session, tenant_id=tenant.tenant_id, scope=CodeScope.CLIENT),
+            full_name="Cliente Pytest",
+        )
         session.add(client)
         await session.commit()
         await session.refresh(client)
@@ -145,18 +235,49 @@ async def tenant_with_case(tenant: TenantFixture) -> TenantFixture:
     """Tenant de teste com um caso já criado (útil para testes de leitura/RBAC)."""
     async with async_session_factory() as session:
         scope_session_to_tenant(session, tenant.tenant_id)
-        case = Case(
-            tenant_id=tenant.tenant_id,
-            user_id=tenant.user_id,
-            platform="whatsapp",
-            fraud_type=FraudType.PIX,
-            urgency=UrgencyLevel.HIGH,
-        )
-        session.add(case)
+        case = await create_case_row(session, tenant)
         await session.commit()
         await session.refresh(case)
         tenant.case_id = case.id
+        tenant.case_code = case.code
+        tenant.platform_id = case.platform_id
+        tenant.fraud_modality_id = case.fraud_modality_id
     return tenant
+
+
+async def case_payload(
+    api_client: AsyncClient, headers: dict[str, str], **overrides: object
+) -> dict[str, object]:
+    """Monta o corpo de `POST /api/v1/cases` resolvendo o catálogo pela própria API.
+
+    Desde a Fase 2.7 a classificação é por entrada de catálogo, e os ids são
+    por tenant — nenhum teste pode ter um id fixo. Resolver via API também
+    exercita o seed sob demanda de `GET /catalog/...`.
+
+    Args:
+        api_client: Cliente HTTP dos testes.
+        headers: Cabeçalho Authorization do tenant.
+        **overrides: Campos a sobrescrever no payload.
+
+    Returns:
+        Payload pronto para o POST.
+    """
+    platforms = await api_client.get("/api/v1/catalog/platforms", headers=headers)
+    modalities = await api_client.get("/api/v1/catalog/fraud-modalities", headers=headers)
+    assert platforms.status_code == 200, platforms.text
+    assert modalities.status_code == 200, modalities.text
+
+    payload: dict[str, object] = {
+        "platform_id": next(
+            entry["id"] for entry in platforms.json() if entry["slug"] == DEFAULT_PLATFORM_SLUG
+        ),
+        "fraud_modality_id": next(
+            entry["id"] for entry in modalities.json() if entry["slug"] == DEFAULT_MODALITY_SLUG
+        ),
+        "urgency": "medium",
+    }
+    payload.update(overrides)
+    return payload
 
 
 @pytest_asyncio.fixture

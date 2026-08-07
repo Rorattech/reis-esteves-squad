@@ -6,14 +6,14 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { CASE_AREA_LABELS, FRAUD_TYPE_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
+import { FraudModalitySelect, PlatformSelect } from "@/components/cases/CatalogSelect";
+import { useCatalog } from "@/hooks/useCatalog";
+import { CASE_AREA_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
 import { ApiError, api } from "@/services/api";
 import type { CaseArea, CaseStatus, FraudType, IntakeResult, UrgencyLevel } from "@/types/api";
 
 const correctionSchema = z.object({
   notes: z.string().trim().min(1, "Justificativa obrigatória para corrigir ou devolver."),
-  platform: z.string().trim().min(1).max(100).optional(),
-  fraud_type: z.enum(["pix", "marketplace", "fake_profile", "fake_lawyer", "other"]).optional(),
   urgency: z.enum(["low", "medium", "high", "critical"]).optional(),
   area: z.enum(["civil", "family", "criminal", "labor", "consumer", "digital"]).optional(),
   matter: z.string().trim().max(255).optional(),
@@ -25,7 +25,6 @@ const returnSchema = z.object({
 });
 type ReturnFormValues = z.infer<typeof returnSchema>;
 
-const FRAUD_TYPE_OPTIONS = Object.entries(FRAUD_TYPE_LABELS) as [FraudType, string][];
 const URGENCY_OPTIONS = Object.entries(URGENCY_LABELS) as [UrgencyLevel, string][];
 const AREA_OPTIONS = Object.entries(CASE_AREA_LABELS) as [CaseArea, string][];
 
@@ -51,6 +50,12 @@ export function IntakeReviewForm({
   canWrite,
   onReviewed,
 }: IntakeReviewFormProps) {
+  const { platforms, modalities, reload: reloadCatalog } = useCatalog();
+  // A correção escolhe entradas do catálogo (não texto livre), então
+  // plataforma e modalidade ficam em estado local, fora do schema do zod.
+  // Começam vazias de propósito: a correção só envia o que o advogado mexeu.
+  const [platformId, setPlatformId] = useState("");
+  const [fraudModalityId, setFraudModalityId] = useState("");
   const [mode, setMode] = useState<"correct" | "return" | null>(null);
   const [approveConfirmOpen, setApproveConfirmOpen] = useState(false);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
@@ -60,8 +65,6 @@ export function IntakeReviewForm({
     resolver: zodResolver(correctionSchema),
     values: {
       notes: "",
-      platform: result?.platform,
-      fraud_type: result?.fraud_type,
       urgency: result?.urgency,
       area: result?.area ?? undefined,
       matter: result?.matter ?? undefined,
@@ -104,8 +107,8 @@ export function IntakeReviewForm({
       await api.reviewIntake(caseId, {
         decision: "correct",
         notes: values.notes,
-        platform: values.platform,
-        fraud_type: values.fraud_type,
+        ...(platformId ? { platform_id: platformId } : {}),
+        ...(fraudModalityId ? { fraud_modality_id: fraudModalityId } : {}),
         urgency: values.urgency,
         area: values.area,
         matter: values.matter,
@@ -174,33 +177,20 @@ export function IntakeReviewForm({
       {mode === "correct" && (
         <form onSubmit={correctionForm.handleSubmit(handleCorrect)} noValidate className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div>
-              <label htmlFor="review-platform" className="block text-xs font-medium text-slate-700">
-                Plataforma
-              </label>
-              <input
-                id="review-platform"
-                type="text"
-                className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
-                {...correctionForm.register("platform")}
-              />
-            </div>
-            <div>
-              <label htmlFor="review-fraud-type" className="block text-xs font-medium text-slate-700">
-                Modalidade
-              </label>
-              <select
-                id="review-fraud-type"
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
-                {...correctionForm.register("fraud_type")}
-              >
-                {FRAUD_TYPE_OPTIONS.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <PlatformSelect
+              platforms={platforms}
+              value={platformId}
+              onChange={setPlatformId}
+              onCreated={reloadCatalog}
+            />
+
+            <FraudModalitySelect
+              modalities={modalities}
+              value={fraudModalityId}
+              onChange={setFraudModalityId}
+              onCreated={reloadCatalog}
+            />
+
             <div>
               <label htmlFor="review-urgency" className="block text-xs font-medium text-slate-700">
                 Urgência

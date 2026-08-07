@@ -18,20 +18,25 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.cases import load_case_for_response
 from app.core.db import get_tenant_session
 from app.core.rbac import require_role
 from app.models.audit_log import AuditLog
 from app.models.case import Case
 from app.models.case_document import CaseDocument
 from app.models.case_intake import CaseIntake
-from app.models.enums import UserRole
+from app.models.enums import FraudType, UserRole
 from app.models.schemas.case import CaseResponse
 from app.models.schemas.case_document import (
     CaseDocumentCreate,
     CaseDocumentResponse,
     CaseDocumentUpdate,
 )
-from app.models.schemas.case_intake import CaseIntakeCreate, CaseIntakeResponse, CaseIntakeUpdate
+from app.models.schemas.case_intake import (
+    CaseIntakeCreate,
+    CaseIntakeResponse,
+    CaseIntakeUpdate,
+)
 from app.models.schemas.intake import (
     AuditLogEntryResponse,
     CaseStageAdvanceRequest,
@@ -45,6 +50,7 @@ from app.services.case_document_service import (
 )
 from app.services.case_intake_service import get_intake, submit_intake, update_intake
 from app.services.intake_orchestration_service import (
+    CatalogEntryNotFoundError,
     IntakeNotReadyError,
     IntakeReviewConflictError,
     StageAdvanceConflictError,
@@ -102,12 +108,19 @@ def _build_result_response(case: Case, state: CaseState) -> IntakeResultResponse
     """Combina o `Case` persistido (fonte de verdade de status/current_module)
     com o `CaseState` do checkpoint (única fonte de intake_outcome/
     missing_information/out_of_scope_reason/documents_requested — campos que
-    não têm coluna própria em `cases`)."""
+    não têm coluna própria em `cases`).
+
+    platform/fraud_type vêm do state, não do caso: são a **leitura da triagem**,
+    que o advogado compara com a própria classificação antes de aprovar ou
+    corrigir. Desde a Fase 2.7 o agente não escreve mais essas colunas (ver
+    orchestrator/graphs/intake.py::persist_intake_recommendation), então lê-las
+    do caso mostraria de volta a escolha do próprio advogado como se fosse
+    recomendação do sistema."""
     return IntakeResultResponse(
         case_id=case.id,
         intake_outcome=state.get("intake_outcome"),
-        platform=case.platform,
-        fraud_type=case.fraud_type,
+        platform=state.get("platform") or case.platform,
+        fraud_type=(FraudType(state["fraud_type"]) if state.get("fraud_type") else case.fraud_type),
         urgency=case.urgency,
         area=case.area,
         matter=case.matter,
@@ -396,7 +409,8 @@ async def run_case_intake(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except LLMOutputValidationError as exc:
         raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, detail="O modelo de IA retornou uma saída inválida."
+            status.HTTP_502_BAD_GATEWAY,
+            detail="O modelo de IA retornou uma saída inválida.",
         ) from exc
     if outcome is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Caso não encontrado.")
@@ -436,7 +450,8 @@ async def get_case_intake_result(
     state = await load_latest_checkpoint(session, tenant_id=tenant_id, case_id=case_id)
     if state is None:
         raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail="O Intake ainda não foi executado para este caso."
+            status.HTTP_404_NOT_FOUND,
+            detail="O Intake ainda não foi executado para este caso.",
         )
     return _build_result_response(case, state)
 
@@ -474,8 +489,8 @@ async def review_case_intake(
         O caso atualizado.
 
     Raises:
-        HTTPException: 404 se o caso não existir; 409 se não houver nenhuma
-            recomendação pendente de revisão.
+        HTTPException: 404 se o caso ou a entrada de catálogo corrigida não
+            existirem; 409 se não houver nenhuma recomendação pendente de revisão.
     """
     tenant_id = uuid.UUID(request.state.tenant_id)
     try:
@@ -488,6 +503,8 @@ async def review_case_intake(
         )
     except IntakeReviewConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except CatalogEntryNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if case is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Caso não encontrado.")
 
@@ -497,7 +514,7 @@ async def review_case_intake(
         tenant_id=str(tenant_id),
         decision=payload.decision.value,
     )
-    return case
+    return await load_case_for_response(session, tenant_id, case_id)
 
 
 @router.post(
@@ -550,7 +567,7 @@ async def advance_case_stage(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Caso não encontrado.")
 
     logger.info("intake.advance", case_id=str(case_id), tenant_id=str(tenant_id))
-    return case
+    return await load_case_for_response(session, tenant_id, case_id)
 
 
 # --- Histórico de auditoria ---------------------------------------------------

@@ -3,28 +3,15 @@ import { describe, expect, it } from "vitest";
 
 import { CaseStageGuide } from "@/components/cases/CaseStageGuide";
 import type { Case } from "@/types/api";
+import { makeCase as makeBaseCase } from "@/test/factories";
+
+/** Caso base destes testes — caso recém-aberto, ainda em rascunho. */
+function makeCase(overrides: Partial<Case> = {}): Case {
+  return makeBaseCase({ status: "draft", ...overrides });
+}
 
 const BASE_PATH = "/cases/77777777-7777-7777-7777-777777777777";
 
-function makeCase(overrides: Partial<Case> = {}): Case {
-  return {
-    id: "77777777-7777-7777-7777-777777777777",
-    tenant_id: "tenant-1",
-    user_id: "user-1",
-    client_id: null,
-    area: null,
-    matter: null,
-    platform: "whatsapp",
-    fraud_type: "pix",
-    urgency: "high",
-    status: "draft",
-    current_module: "intake",
-    human_review_required: false,
-    created_at: "2026-07-01T10:00:00Z",
-    updated_at: "2026-07-02T10:00:00Z",
-    ...overrides,
-  };
-}
 
 describe("CaseStageGuide", () => {
   it("mostra a posição no workflow, a ação de avanço e o link para a etapa", () => {

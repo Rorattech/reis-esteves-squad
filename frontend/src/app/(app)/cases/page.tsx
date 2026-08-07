@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { CaseRowActions } from "@/components/cases/CaseRowActions";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -11,7 +11,7 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAuth } from "@/hooks/useAuth";
 import { useCases } from "@/hooks/useCases";
-import { CASE_STATUS_LABELS, FRAUD_TYPE_LABELS } from "@/lib/caseLabels";
+import { CASE_STATUS_LABELS } from "@/lib/caseLabels";
 import { CASE_STAGES, stageLabel, stageNumber } from "@/lib/caseStages";
 import { canDeleteCase, canWriteCase } from "@/lib/roles";
 import type { CaseStatus } from "@/types/api";
@@ -26,10 +26,14 @@ const STATUS_FILTER_OPTIONS: { value: CaseStatus | "all"; label: string }[] = [
 
 export default function CasesPage() {
   const router = useRouter();
-  const { cases, isLoading, error, reload } = useCases();
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CaseStatus | "all">("all");
+
+  // Busca e filtro são do servidor (GET /cases?search=&status=): a busca
+  // inclui o nome do cliente, e filtrar no navegador exigiria baixar a base
+  // inteira, com os nomes junto, para toda sessão aberta.
+  const { cases, isLoading, error, reload } = useCases({ search, status: statusFilter });
 
   // Esconder ação que o papel não pode executar é só conveniência de UX — o
   // backend reforça a autorização de verdade (CLAUDE.md, seção 16).
@@ -37,19 +41,11 @@ export default function CasesPage() {
   const canEditCase = canWriteCase(user);
   const canRemoveCase = canDeleteCase(user);
 
-  // Filtro e busca são só do lado do cliente, sobre a lista já carregada —
-  // GET /cases não aceita parâmetros de busca/filtro hoje (backend/app/api/v1/cases.py).
-  const filteredCases = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
-    return cases.filter((item) => {
-      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
-      const matchesSearch =
-        normalizedSearch.length === 0 ||
-        item.platform.toLowerCase().includes(normalizedSearch) ||
-        (item.matter ?? "").toLowerCase().includes(normalizedSearch);
-      return matchesStatus && matchesSearch;
-    });
-  }, [cases, search, statusFilter]);
+  // Com a busca no servidor, "lista vazia" tem dois significados diferentes:
+  // escritório sem nenhum caso, ou filtro que não achou nada. Confundir os
+  // dois esconderia o campo de busca e deixaria o advogado sem saída.
+  const hasActiveFilter = search.trim().length > 0 || statusFilter !== "all";
+  const isEmptyOffice = cases.length === 0 && !hasActiveFilter;
 
   const newCaseButton = canCreateCase ? (
     <Link
@@ -71,7 +67,7 @@ export default function CasesPage() {
 
       {!isLoading && error && <ErrorState message={error} onRetry={reload} />}
 
-      {!isLoading && !error && cases.length === 0 && (
+      {!isLoading && !error && isEmptyOffice && (
         <EmptyState
           title="Nenhum caso ainda"
           description="Quando um caso for aberto para este escritório, ele aparece aqui."
@@ -88,14 +84,14 @@ export default function CasesPage() {
         />
       )}
 
-      {!isLoading && !error && cases.length > 0 && (
+      {!isLoading && !error && !isEmptyOffice && (
         <>
           <div className="flex flex-wrap gap-2">
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar por plataforma ou matéria..."
+              placeholder="Buscar por código, cliente, plataforma ou matéria..."
               aria-label="Buscar casos"
               className="w-64 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
             />
@@ -113,7 +109,7 @@ export default function CasesPage() {
             </select>
           </div>
 
-          {filteredCases.length === 0 ? (
+          {cases.length === 0 ? (
             <EmptyState
               title="Nenhum caso encontrado"
               description="Ajuste a busca ou o filtro de status para ver outros casos."
@@ -123,8 +119,9 @@ export default function CasesPage() {
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Plataforma</th>
+                    <th className="px-4 py-3 font-medium">Caso</th>
                     <th className="px-4 py-3 font-medium">Cliente</th>
+                    <th className="px-4 py-3 font-medium">Plataforma</th>
                     <th className="px-4 py-3 font-medium">Modalidade</th>
                     <th className="px-4 py-3 font-medium">Status</th>
                     <th className="px-4 py-3 font-medium">Etapa atual</th>
@@ -133,7 +130,7 @@ export default function CasesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredCases.map((item) => (
+                  {cases.map((item) => (
                     <tr
                       key={item.id}
                       onClick={() => router.push(`/cases/${item.id}`)}
@@ -142,18 +139,20 @@ export default function CasesPage() {
                       <td className="px-4 py-3">
                         {/* Continua sendo um link de verdade: é o alvo de
                             navegação por teclado e leitor de tela da linha,
-                            que o onClick do <tr> sozinho não oferece. */}
+                            que o onClick do <tr> sozinho não oferece.
+                            O rótulo é o código legível — o UUID fica só na URL. */}
                         <Link
                           href={`/cases/${item.id}`}
                           className="font-medium text-slate-900 hover:underline"
                         >
-                          {item.platform}
+                          {item.code}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-500">{item.client_id ?? "—"}</td>
                       <td className="px-4 py-3 text-slate-600">
-                        {FRAUD_TYPE_LABELS[item.fraud_type] ?? item.fraud_type}
+                        {item.client?.full_name ?? "—"}
                       </td>
+                      <td className="px-4 py-3 text-slate-600">{item.platform}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.fraud_modality.label}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={item.status} />
                       </td>
@@ -171,7 +170,7 @@ export default function CasesPage() {
                       <td className="px-4 py-3">
                         <CaseRowActions
                           caseId={item.id}
-                          caseLabel={item.platform}
+                          caseLabel={item.code}
                           canEdit={canEditCase}
                           canDelete={canRemoveCase}
                           onDeleted={reload}

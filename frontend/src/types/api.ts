@@ -44,16 +44,138 @@ export interface TokenResponse {
   token_type: string;
 }
 
-/** Espelha CaseResponse (backend/app/models/schemas/case.py). */
+/** Espelha PersonType (backend/app/models/enums.py). */
+export type PersonType = "individual" | "company";
+
+/** Espelha MaritalStatus (backend/app/models/enums.py). */
+export type MaritalStatus =
+  | "single"
+  | "married"
+  | "divorced"
+  | "widowed"
+  | "separated"
+  | "stable_union";
+
+/** Espelha PlatformResponse (backend/app/models/schemas/catalog.py). */
+export interface Platform {
+  id: string;
+  slug: string;
+  label: string;
+  is_system: boolean;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+/**
+ * Espelha FraudModalityResponse (backend/app/models/schemas/catalog.py).
+ * `family` é a família de FraudType a que a modalidade pertence — é o que o
+ * grafo e os prompts leem (ver backend/app/models/catalog.py).
+ */
+export interface FraudModality {
+  id: string;
+  slug: string;
+  label: string;
+  family: FraudType;
+  is_system: boolean;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+/** Espelha PlatformCreate (backend/app/models/schemas/catalog.py). */
+export interface PlatformCreateInput {
+  label: string;
+}
+
+/** Espelha FraudModalityCreate — `family` é obrigatório. */
+export interface FraudModalityCreateInput {
+  label: string;
+  family: FraudType;
+}
+
+/**
+ * Espelha ClientSummary (backend/app/models/schemas/client.py) — o cliente
+ * como aparece dentro de um caso. **Sem documento de propósito**: CPF completo
+ * só em `GET /clients/{id}`.
+ */
+export interface ClientSummary {
+  id: string;
+  code: string;
+  full_name: string;
+}
+
+/** Espelha ClientResponse (backend/app/models/schemas/client.py). */
+export interface Client {
+  id: string;
+  tenant_id: string;
+  code: string;
+  full_name: string;
+  person_type: PersonType;
+  document_number: string | null;
+  email: string | null;
+  phone: string | null;
+  rg: string | null;
+  rg_issuer: string | null;
+  birth_date: string | null;
+  nationality: string | null;
+  marital_status: MaritalStatus | null;
+  profession: string | null;
+  address_street: string | null;
+  address_number: string | null;
+  address_complement: string | null;
+  address_district: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_zip_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Espelha ClientCreate (backend/app/models/schemas/client.py). */
+export interface ClientCreateInput {
+  full_name: string;
+  person_type?: PersonType;
+  document_number?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  rg?: string | null;
+  rg_issuer?: string | null;
+  birth_date?: string | null;
+  nationality?: string | null;
+  marital_status?: MaritalStatus | null;
+  profession?: string | null;
+  address_street?: string | null;
+  address_number?: string | null;
+  address_complement?: string | null;
+  address_district?: string | null;
+  address_city?: string | null;
+  address_state?: string | null;
+  address_zip_code?: string | null;
+}
+
+/** Espelha ClientUpdate — todos os campos são opcionais (semântica PATCH). */
+export type ClientUpdateInput = Partial<ClientCreateInput>;
+
+/**
+ * Espelha CaseResponse (backend/app/models/schemas/case.py).
+ * `code` é o identificador legível do caso — é ele que a interface exibe; o
+ * `id` (UUID) fica só na URL. `platform` e `fraud_type` são rótulo e família
+ * denormalizados da entrada de catálogo escolhida.
+ */
 export interface Case {
   id: string;
   tenant_id: string;
   user_id: string;
+  code: string;
   client_id: string | null;
+  client: ClientSummary | null;
   area: CaseArea | null;
   matter: string | null;
   platform: string;
+  platform_entry: Platform;
   fraud_type: FraudType;
+  fraud_modality: FraudModality;
   urgency: UrgencyLevel;
   status: CaseStatus;
   current_module: ModuleName;
@@ -69,18 +191,21 @@ export interface Case {
  * do caso.
  */
 export interface CaseCreateInput {
-  platform: string;
-  fraud_type: FraudType;
+  platform_id: string;
+  fraud_modality_id: string;
   urgency?: UrgencyLevel;
+  /** Cliente já cadastrado. Mutuamente exclusivo com `client`. */
   client_id?: string;
+  /** Cliente novo, criado na mesma transação do caso. Exclusivo com `client_id`. */
+  client?: ClientCreateInput;
   area?: CaseArea;
   matter?: string;
 }
 
 /** Espelha CaseUpdate (backend/app/models/schemas/case.py) — todos os campos são opcionais. */
 export interface CaseUpdateInput {
-  platform?: string;
-  fraud_type?: FraudType;
+  platform_id?: string;
+  fraud_modality_id?: string;
   urgency?: UrgencyLevel;
   status?: CaseStatus;
   client_id?: string | null;
@@ -201,8 +326,8 @@ export type IntakeReviewDecision = "approve" | "correct" | "return_for_informati
 export interface IntakeReviewInput {
   decision: IntakeReviewDecision;
   notes?: string | null;
-  platform?: string;
-  fraud_type?: FraudType;
+  platform_id?: string;
+  fraud_modality_id?: string;
   urgency?: UrgencyLevel;
   area?: CaseArea;
   matter?: string;

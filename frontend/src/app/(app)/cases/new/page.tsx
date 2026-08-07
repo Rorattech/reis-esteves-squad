@@ -1,82 +1,90 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
 
-import { CASE_AREA_LABELS, FRAUD_TYPE_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
+import { FraudModalitySelect, PlatformSelect } from "@/components/cases/CatalogSelect";
+import { ClientForm } from "@/components/clients/ClientForm";
+import { ClientPicker, type ClientSelection } from "@/components/clients/ClientPicker";
+import { toClientPayload, type ClientFormValues } from "@/components/clients/clientSchema";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { useCatalog } from "@/hooks/useCatalog";
+import { CASE_AREA_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
 import { ApiError, api } from "@/services/api";
-import type { CaseArea, FraudType, UrgencyLevel } from "@/types/api";
+import type { CaseArea, CaseCreateInput, UrgencyLevel } from "@/types/api";
 
-/** Espelha CaseCreate (backend/app/models/schemas/case.py). */
-const caseCreateSchema = z.object({
-  platform: z
-    .string()
-    .trim()
-    .min(1, "Informe a plataforma envolvida.")
-    .max(100, "Máximo de 100 caracteres."),
-  fraud_type: z.enum(["pix", "marketplace", "fake_profile", "fake_lawyer", "other"], {
-    message: "Selecione a modalidade do golpe.",
-  }),
-  urgency: z.enum(["low", "medium", "high", "critical"]).optional(),
-  // client_id/area/matter são opcionais no backend: podem não ser conhecidos
-  // na abertura e serem preenchidos depois, pela triagem ou pela tela de
-  // edição do caso. O formato do token é validado aqui; a existência do
-  // cliente neste tenant, só o backend pode confirmar (404 "Cliente não
-  // encontrado.").
-  client_id: z
-    .string()
-    .trim()
-    .uuid("Token do cliente inválido — use o identificador completo do cliente.")
-    .optional()
-    .or(z.literal("")),
-  area: z.enum(["civil", "family", "criminal", "labor", "consumer", "digital"]).optional().or(z.literal("")),
-  matter: z.string().trim().max(255, "Máximo de 255 caracteres.").optional(),
-});
-
-type CaseCreateFormValues = z.infer<typeof caseCreateSchema>;
-
-const FRAUD_TYPE_OPTIONS = Object.entries(FRAUD_TYPE_LABELS) as [FraudType, string][];
 const URGENCY_OPTIONS = Object.entries(URGENCY_LABELS) as [UrgencyLevel, string][];
 const AREA_OPTIONS = Object.entries(CASE_AREA_LABELS) as [CaseArea, string][];
 
+const inputClass =
+  "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none";
+const selectClass = `${inputClass} bg-white`;
+
 export default function NewCasePage() {
   const router = useRouter();
+  const { platforms, modalities, isLoading, error, reload } = useCatalog();
+
+  const [platformId, setPlatformId] = useState("");
+  const [fraudModalityId, setFraudModalityId] = useState("");
+  const [urgency, setUrgency] = useState<UrgencyLevel>("medium");
+  const [area, setArea] = useState<CaseArea | "">("");
+  const [matter, setMatter] = useState("");
+  const [clientSelection, setClientSelection] = useState<ClientSelection>({ kind: "none" });
+  const [isRegisteringClient, setIsRegisteringClient] = useState(false);
+
+  const [fieldErrors, setFieldErrors] = useState<{ platform?: string; modality?: string }>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<CaseCreateFormValues>({ resolver: zodResolver(caseCreateSchema) });
-
-  async function onSubmit(values: CaseCreateFormValues) {
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
     setFormError(null);
+
+    const errors: { platform?: string; modality?: string } = {};
+    if (!platformId) errors.platform = "Selecione a plataforma envolvida.";
+    if (!fraudModalityId) errors.modality = "Selecione a modalidade do golpe.";
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    const payload: CaseCreateInput = {
+      platform_id: platformId,
+      fraud_modality_id: fraudModalityId,
+      urgency,
+      ...(area ? { area } : {}),
+      ...(matter.trim() ? { matter: matter.trim() } : {}),
+    };
+
+    // client_id e client são mutuamente exclusivos no backend — o cliente novo
+    // é criado na mesma transação do caso, então uma falha aqui não deixa
+    // cadastro órfão.
+    if (clientSelection.kind === "existing") {
+      payload.client_id = clientSelection.client.id;
+    } else if (clientSelection.kind === "new") {
+      payload.client = toClientPayload(clientSelection.values);
+    }
+
+    setIsSubmitting(true);
     try {
-      // Campos opcionais em branco são omitidos do payload: enviar "" faria o
-      // backend rejeitar com 422 (client_id espera UUID, area espera um valor
-      // do enum CaseArea).
-      const created = await api.createCase({
-        platform: values.platform,
-        fraud_type: values.fraud_type,
-        urgency: values.urgency,
-        ...(values.client_id ? { client_id: values.client_id } : {}),
-        ...(values.area ? { area: values.area } : {}),
-        ...(values.matter ? { matter: values.matter } : {}),
-      });
+      const created = await api.createCase(payload);
       router.push(`/cases/${created.id}`);
-    } catch (error) {
+    } catch (err) {
       setFormError(
-        error instanceof ApiError ? error.message : "Não foi possível criar o caso. Tente novamente.",
+        err instanceof ApiError ? err.message : "Não foi possível criar o caso. Tente novamente.",
       );
+      setIsSubmitting(false);
     }
   }
 
+  function handleNewClientSubmit(values: ClientFormValues) {
+    setClientSelection({ kind: "new", values });
+    setIsRegisteringClient(false);
+    return Promise.resolve();
+  }
+
   return (
-    <div className="mx-auto max-w-lg space-y-4">
+    <div className="mx-auto max-w-2xl space-y-4">
       <div>
         <Link href="/cases" className="text-sm text-slate-500 hover:text-slate-700">
           ← Voltar para Casos
@@ -88,147 +96,134 @@ export default function NewCasePage() {
         </p>
       </div>
 
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        noValidate
-        className="space-y-4 rounded-lg border border-slate-200 bg-white p-5"
-      >
-        <div>
-          <label htmlFor="platform" className="block text-sm font-medium text-slate-700">
-            Plataforma envolvida
-          </label>
-          <input
-            id="platform"
-            type="text"
-            placeholder="Ex.: WhatsApp, Shopee, Mercado Livre..."
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-            {...register("platform")}
-          />
-          {errors.platform && (
-            <p className="mt-1 text-xs text-red-600">{errors.platform.message}</p>
+      {isLoading && <LoadingState label="Carregando catálogo de classificação..." />}
+
+      {!isLoading && error && <ErrorState message={error} onRetry={reload} />}
+
+      {!isLoading && !error && (
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          className="space-y-6 rounded-lg border border-slate-200 bg-white p-5"
+        >
+          <fieldset className="space-y-4">
+            <legend className="text-sm font-medium text-slate-900">Cliente</legend>
+
+            {isRegisteringClient ? (
+              <div className="rounded-md border border-slate-200 p-4">
+                <ClientForm
+                  onSubmit={handleNewClientSubmit}
+                  onCancel={() => setIsRegisteringClient(false)}
+                  submitLabel="Usar este cliente"
+                />
+              </div>
+            ) : (
+              <ClientPicker
+                selection={clientSelection}
+                onSelect={setClientSelection}
+                onRequestNewClient={() => setIsRegisteringClient(true)}
+              />
+            )}
+
+            <p className="text-xs text-slate-500">
+              O cliente pode ficar em branco e ser vinculado depois, na edição do caso.
+            </p>
+          </fieldset>
+
+          <fieldset className="space-y-4">
+            <legend className="text-sm font-medium text-slate-900">Classificação</legend>
+
+            <PlatformSelect
+              platforms={platforms}
+              value={platformId}
+              onChange={setPlatformId}
+              onCreated={reload}
+              error={fieldErrors.platform}
+            />
+
+            <FraudModalitySelect
+              modalities={modalities}
+              value={fraudModalityId}
+              onChange={setFraudModalityId}
+              onCreated={reload}
+              error={fieldErrors.modality}
+            />
+
+            <div>
+              <label htmlFor="urgency" className="block text-sm font-medium text-slate-700">
+                Urgência
+              </label>
+              <select
+                id="urgency"
+                value={urgency}
+                onChange={(event) => setUrgency(event.target.value as UrgencyLevel)}
+                className={selectClass}
+              >
+                {URGENCY_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="area" className="block text-sm font-medium text-slate-700">
+                Área <span className="font-normal text-slate-400">(opcional)</span>
+              </label>
+              <select
+                id="area"
+                value={area}
+                onChange={(event) => setArea(event.target.value as CaseArea | "")}
+                className={selectClass}
+              >
+                <option value="">A definir na triagem</option>
+                {AREA_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="matter" className="block text-sm font-medium text-slate-700">
+                Matéria <span className="font-normal text-slate-400">(opcional)</span>
+              </label>
+              <input
+                id="matter"
+                type="text"
+                value={matter}
+                onChange={(event) => setMatter(event.target.value)}
+                placeholder="Ex.: golpe do PIX via WhatsApp clonado"
+                className={inputClass}
+              />
+            </div>
+          </fieldset>
+
+          {formError && (
+            <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              {formError}
+            </p>
           )}
-        </div>
 
-        <div>
-          <label htmlFor="fraud_type" className="block text-sm font-medium text-slate-700">
-            Modalidade do golpe
-          </label>
-          <select
-            id="fraud_type"
-            defaultValue=""
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-            {...register("fraud_type")}
-          >
-            <option value="" disabled>
-              Selecione...
-            </option>
-            {FRAUD_TYPE_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          {errors.fraud_type && (
-            <p className="mt-1 text-xs text-red-600">{errors.fraud_type.message}</p>
-          )}
-        </div>
-
-        <div>
-          <label htmlFor="urgency" className="block text-sm font-medium text-slate-700">
-            Urgência
-          </label>
-          <select
-            id="urgency"
-            defaultValue="medium"
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-            {...register("urgency")}
-          >
-            {URGENCY_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          {errors.urgency && <p className="mt-1 text-xs text-red-600">{errors.urgency.message}</p>}
-        </div>
-
-        <div>
-          <label htmlFor="client_id" className="block text-sm font-medium text-slate-700">
-            Token do cliente <span className="font-normal text-slate-400">(opcional)</span>
-          </label>
-          <input
-            id="client_id"
-            type="text"
-            placeholder="Ex.: 3f2a9c10-4b7e-4d51-9a2f-8e0c1d6b5a44"
-            aria-describedby="client_id-help"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm focus:border-slate-500 focus:outline-none"
-            {...register("client_id")}
-          />
-          <p id="client_id-help" className="mt-1 text-xs text-slate-500">
-            Identificador do cliente já cadastrado neste escritório. Pode ficar em branco e ser
-            preenchido depois, na edição do caso.
-          </p>
-          {errors.client_id && (
-            <p className="mt-1 text-xs text-red-600">{errors.client_id.message}</p>
-          )}
-        </div>
-
-        <div>
-          <label htmlFor="area" className="block text-sm font-medium text-slate-700">
-            Área <span className="font-normal text-slate-400">(opcional)</span>
-          </label>
-          <select
-            id="area"
-            defaultValue=""
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-            {...register("area")}
-          >
-            <option value="">A definir na triagem</option>
-            {AREA_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          {errors.area && <p className="mt-1 text-xs text-red-600">{errors.area.message}</p>}
-        </div>
-
-        <div>
-          <label htmlFor="matter" className="block text-sm font-medium text-slate-700">
-            Matéria <span className="font-normal text-slate-400">(opcional)</span>
-          </label>
-          <input
-            id="matter"
-            type="text"
-            placeholder="Ex.: golpe do PIX via WhatsApp clonado"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-            {...register("matter")}
-          />
-          {errors.matter && <p className="mt-1 text-xs text-red-600">{errors.matter.message}</p>}
-        </div>
-
-        {formError && (
-          <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-            {formError}
-          </p>
-        )}
-
-        <div className="flex justify-end gap-2">
-          <Link
-            href="/cases"
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Cancelar
-          </Link>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-          >
-            {isSubmitting ? "Criando..." : "Criar caso"}
-          </button>
-        </div>
-      </form>
+          <div className="flex justify-end gap-2">
+            <Link
+              href="/cases"
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancelar
+            </Link>
+            <button
+              type="submit"
+              disabled={isSubmitting || isRegisteringClient}
+              className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {isSubmitting ? "Criando..." : "Criar caso"}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

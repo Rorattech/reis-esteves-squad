@@ -107,7 +107,10 @@ def _blank_state(*, case_id: str, tenant_id: str, narrative: str = "Relato de te
     return CaseState(
         case_id=case_id,
         tenant_id=tenant_id,
+        case_code="CAS-2026-000001",
         narrative=narrative,
+        client_city=None,
+        client_state=None,
         platform="a classificar",
         fraud_type="other",
         urgency="medium",

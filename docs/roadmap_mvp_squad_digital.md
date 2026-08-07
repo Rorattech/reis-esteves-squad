@@ -781,6 +781,48 @@ Execute os testes ao final.
 
 ---
 
+### 2.7 — Cliente, identificadores legíveis e catálogos de classificação
+
+`Retrabalho da abertura de caso · executado`
+
+**Por que existiu:** o modelo `Client` estava no banco desde a Fase 2.1, com
+serviço e schemas auditados, mas sem rota HTTP e sem tela. Na prática a
+abertura de caso pedia ao advogado que colasse um UUID à mão e a lista de
+casos mostrava esse UUID onde deveria estar o nome de uma pessoa.
+
+**O que entregou:**
+
+- Identificadores legíveis por escritório — `CAS-2026-000123` e `CLI-000042`
+  (`tenant_counters` + `app/core/identifiers.py`). O UUID continua sendo PK e
+  fica só na URL.
+- Qualificação completa do cliente (CPC art. 319, II), com CPF/CNPJ validado
+  por dígito verificador e normalizado, e endereço — cujo município fixa o
+  foro do consumidor (CDC art. 101, I).
+- Rotas `/api/v1/clients` e telas `/clients`, `/clients/new`, `/clients/{id}`.
+- Catálogos `platforms` e `fraud_modalities` por tenant, com opção "Outro
+  (cadastrar)". Cada modalidade aponta para uma família de `FraudType`, então
+  o vocabulário abre para o usuário sem abrir para os agentes.
+- A triagem deixou de sobrescrever a classificação do caso: recomenda, e só
+  muda por correção humana explícita.
+- `CaseState` recebeu `case_code`, `client_city` e `client_state` — e nada
+  além disso; nenhum dado pessoal trafega para o modelo de IA.
+
+**Fora de escopo (decisão do produto):** acompanhamento processual
+pós-protocolo (número CNJ, DataJud, ADVBOX).
+
+Detalhes em `docs/phase_2_intake_domain.md` e
+`docs/adr/0004-identificadores-legiveis-e-catalogos-de-classificacao.md`.
+
+**Verificar depois**
+
+- [ ] Nenhum UUID aparece em tela para o advogado.
+- [ ] Cliente novo criado na abertura do caso não sobra órfão quando o caso falha.
+- [ ] O mesmo CPF não entra duas vezes no mesmo escritório, com ou sem máscara.
+- [ ] Entrada de catálogo de um escritório não aparece para outro.
+- [ ] Nenhum dado pessoal em claro em `audit_logs` nem nos logs do structlog.
+
+---
+
 ## Fase 3 — Evidências digitais
 
 *Módulo LangGraph: evidence*

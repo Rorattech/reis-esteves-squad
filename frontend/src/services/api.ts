@@ -12,12 +12,20 @@ import type {
   AuditLogEntry,
   Case,
   CaseCreateInput,
+  Client,
+  ClientCreateInput,
+  ClientUpdateInput,
+  FraudModality,
+  FraudModalityCreateInput,
+  Platform,
+  PlatformCreateInput,
   CaseDocument,
   CaseDocumentCreateInput,
   CaseDocumentUpdateInput,
   CaseIntake,
   CaseIntakeCreateInput,
   CaseIntakeUpdateInput,
+  CaseStatus,
   CaseStageAdvanceInput,
   CaseUpdateInput,
   EvidenceAnalysisResult,
@@ -155,8 +163,73 @@ export const api = {
     return request<User>("/auth/me");
   },
 
-  async listCases(): Promise<Case[]> {
-    return request<Case[]>("/cases");
+  /**
+   * Busca e filtro vão para o servidor porque a busca inclui o nome do
+   * cliente: filtrar no navegador exigiria baixar a base de casos inteira,
+   * com os nomes, para toda sessão aberta.
+   *
+   * POST apesar de ser leitura: o termo casa com o nome do cliente, e query
+   * string vaza para access log, histórico do navegador, cabeçalho Referer e
+   * cache de proxy (CLAUDE.md, seção 12).
+   */
+  async listCases(params: { search?: string; status?: CaseStatus } = {}): Promise<Case[]> {
+    return request<Case[]>("/cases/search", {
+      method: "POST",
+      body: JSON.stringify({
+        search: params.search?.trim() || null,
+        status: params.status ?? null,
+      }),
+    });
+  },
+
+  /**
+   * Busca por nome, CPF/CNPJ (com ou sem máscara) ou código do cliente.
+   * POST pelo mesmo motivo de `listCases` — o termo pode ser um CPF.
+   */
+  async listClients(search?: string): Promise<Client[]> {
+    return request<Client[]>("/clients/search", {
+      method: "POST",
+      body: JSON.stringify({ search: search?.trim() || null }),
+    });
+  },
+
+  async getClient(clientId: string): Promise<Client> {
+    return request<Client>(`/clients/${clientId}`);
+  },
+
+  async createClient(input: ClientCreateInput): Promise<Client> {
+    return request<Client>("/clients", { method: "POST", body: JSON.stringify(input) });
+  },
+
+  async updateClient(clientId: string, input: ClientUpdateInput): Promise<Client> {
+    return request<Client>(`/clients/${clientId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async listPlatforms(): Promise<Platform[]> {
+    return request<Platform[]>("/catalog/platforms");
+  },
+
+  /** Cadastra uma plataforma própria do escritório (opção "Outro"). */
+  async createPlatform(input: PlatformCreateInput): Promise<Platform> {
+    return request<Platform>("/catalog/platforms", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async listFraudModalities(): Promise<FraudModality[]> {
+    return request<FraudModality[]>("/catalog/fraud-modalities");
+  },
+
+  /** Cadastra uma modalidade própria do escritório — `family` é obrigatório. */
+  async createFraudModality(input: FraudModalityCreateInput): Promise<FraudModality> {
+    return request<FraudModality>("/catalog/fraud-modalities", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 
   async getCase(caseId: string): Promise<Case> {

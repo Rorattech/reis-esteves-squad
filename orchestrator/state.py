@@ -26,9 +26,7 @@ ActorType = Literal["system", "agent", "human"]
 DraftStatus = Literal["DRAFT_PENDING_REVIEW", "APPROVED", "REJECTED"]
 """Status obrigatório de todo output jurídico gerado por IA (CLAUDE.md, seção 2)."""
 
-IntakeOutcome = Literal[
-    "completed", "blocked", "awaiting_information", "awaiting_human_review"
-]
+IntakeOutcome = Literal["completed", "blocked", "awaiting_information", "awaiting_human_review"]
 """Estado explícito da etapa de Intake (módulo 1 — coordinator/triage):
 
 - "completed": um nó concluiu sua própria classificação com confiança
@@ -94,7 +92,13 @@ class EvidenceFinding(BaseModel):
     agent: Literal["documental", "specialist"]
     category: FindingCategory
     evidence_type: Literal[
-        "screenshot", "payment_receipt", "fake_profile", "conversation", "url", "document", "other"
+        "screenshot",
+        "payment_receipt",
+        "fake_profile",
+        "conversation",
+        "url",
+        "document",
+        "other",
     ]
     summary: str
     relevance: Literal["low", "medium", "high"]
@@ -127,9 +131,7 @@ class EvidenceItem(BaseModel):
     """
 
     evidence_id: str
-    evidence_type: Literal[
-        "screenshot", "payment_receipt", "fake_profile", "conversation", "other"
-    ]
+    evidence_type: Literal["screenshot", "payment_receipt", "fake_profile", "conversation", "other"]
     file_reference: str
     description: str
     relevance: Literal["low", "medium", "high"]
@@ -240,10 +242,22 @@ class CaseState(TypedDict):
 
     case_id: str
     tenant_id: str
+    case_code: str
+    """Identificador legível do caso (ex.: "CAS-2026-000123"). É o rótulo que
+    os prompts usam no cabeçalho dos relatórios — **no lugar do nome do
+    cliente**, que nunca trafega para o modelo (ver client_city abaixo)."""
     narrative: str
     """Relato inicial em texto livre do cliente/advogado (equivalente a
     CaseIntake.narrative, backend/app/models/case_intake.py) — entrada
     principal dos nós coordinator/triage. Nunca inventado pelos agentes."""
+    client_city: str | None
+    """Município do cliente. Único dado pessoal que entra no estado, e por um
+    motivo concreto: é ele que fixa o foro do consumidor (CDC art. 101, I),
+    que prompts/digital/evidence/specialist.md precisa recomendar.
+    Nome, CPF, RG e endereço completo NUNCA entram aqui nem vão para o modelo
+    de IA (CLAUDE.md, seção 12)."""
+    client_state: str | None
+    """UF do cliente — complementa client_city para identificar a comarca."""
     platform: str
     fraud_type: str
     urgency: Literal["low", "medium", "high", "critical"]

@@ -17,7 +17,7 @@ from app.core.security import hash_password
 from app.main import app
 from app.models.enums import UserRole
 from app.models.user import User
-from tests.conftest import TenantFixture, login
+from tests.conftest import TenantFixture, case_payload, login
 from tests.llm_stubs import StubLLMClient
 
 _PIX_COORDINATOR_RESPONSE = {
@@ -110,7 +110,7 @@ async def test_full_intake_flow(api_client: AsyncClient, tenant: TenantFixture) 
 
     create_response = await api_client.post(
         "/api/v1/cases",
-        json={"platform": "whatsapp", "fraud_type": "pix", "urgency": "high"},
+        json=await case_payload(api_client, headers, urgency="high"),
         headers=headers,
     )
     assert create_response.status_code == 201, create_response.text
@@ -175,7 +175,7 @@ async def test_review_correction_applies_fields_and_advances_case(
     headers = await login(api_client, tenant)
     create_response = await api_client.post(
         "/api/v1/cases",
-        json={"platform": "shopee", "fraud_type": "marketplace", "urgency": "medium"},
+        json=await case_payload(api_client, headers, urgency="medium"),
         headers=headers,
     )
     case_id = create_response.json()["id"]
@@ -207,18 +207,23 @@ async def test_review_return_for_information_keeps_case_in_intake(
     headers = await login(api_client, tenant)
     create_response = await api_client.post(
         "/api/v1/cases",
-        json={"platform": "whatsapp", "fraud_type": "pix", "urgency": "high"},
+        json=await case_payload(api_client, headers, urgency="high"),
         headers=headers,
     )
     case_id = create_response.json()["id"]
     await api_client.post(
-        f"/api/v1/cases/{case_id}/intake", json={"narrative": "relato inicial"}, headers=headers
+        f"/api/v1/cases/{case_id}/intake",
+        json={"narrative": "relato inicial"},
+        headers=headers,
     )
     await _run_intake(api_client, case_id, headers)
 
     review_response = await api_client.post(
         f"/api/v1/cases/{case_id}/intake/review",
-        json={"decision": "return_for_information", "notes": "Faltou o valor do golpe."},
+        json={
+            "decision": "return_for_information",
+            "notes": "Faltou o valor do golpe.",
+        },
         headers=headers,
     )
     assert review_response.status_code == 200, review_response.text
@@ -257,7 +262,7 @@ async def test_reviewing_twice_after_approval_is_conflict(
     headers = await login(api_client, tenant)
     create_response = await api_client.post(
         "/api/v1/cases",
-        json={"platform": "whatsapp", "fraud_type": "pix", "urgency": "high"},
+        json=await case_payload(api_client, headers, urgency="high"),
         headers=headers,
     )
     case_id = create_response.json()["id"]
@@ -266,12 +271,16 @@ async def test_reviewing_twice_after_approval_is_conflict(
     )
     await _run_intake(api_client, case_id, headers)
     first = await api_client.post(
-        f"/api/v1/cases/{case_id}/intake/review", json={"decision": "approve"}, headers=headers
+        f"/api/v1/cases/{case_id}/intake/review",
+        json={"decision": "approve"},
+        headers=headers,
     )
     assert first.status_code == 200
 
     second = await api_client.post(
-        f"/api/v1/cases/{case_id}/intake/review", json={"decision": "approve"}, headers=headers
+        f"/api/v1/cases/{case_id}/intake/review",
+        json={"decision": "approve"},
+        headers=headers,
     )
     assert second.status_code == 409
 
@@ -295,7 +304,9 @@ async def test_advance_moves_case_to_evidence_without_ai_triage(
     blocked = await api_client.post(f"/api/v1/cases/{case_id}/intake/run", headers=headers)
     assert blocked.status_code == 503
     conflict = await api_client.post(
-        f"/api/v1/cases/{case_id}/intake/review", json={"decision": "approve"}, headers=headers
+        f"/api/v1/cases/{case_id}/intake/review",
+        json={"decision": "approve"},
+        headers=headers,
     )
     assert conflict.status_code == 409
 
@@ -338,7 +349,9 @@ async def test_advance_without_narrative_returns_422(
 ) -> None:
     headers = await login(api_client, tenant_with_case)
     response = await api_client.post(
-        f"/api/v1/cases/{tenant_with_case.case_id}/intake/advance", json={}, headers=headers
+        f"/api/v1/cases/{tenant_with_case.case_id}/intake/advance",
+        json={},
+        headers=headers,
     )
     assert response.status_code == 422
 
@@ -373,13 +386,17 @@ async def test_viewer_cannot_advance_case(
     )
     viewer_headers = await _login_as_new_user(api_client, tenant_with_case, UserRole.VIEWER)
     response = await api_client.post(
-        f"/api/v1/cases/{tenant_with_case.case_id}/intake/advance", json={}, headers=viewer_headers
+        f"/api/v1/cases/{tenant_with_case.case_id}/intake/advance",
+        json={},
+        headers=viewer_headers,
     )
     assert response.status_code == 403
 
 
 async def test_advance_is_isolated_between_tenants(
-    api_client: AsyncClient, tenant_with_case: TenantFixture, other_tenant: TenantFixture
+    api_client: AsyncClient,
+    tenant_with_case: TenantFixture,
+    other_tenant: TenantFixture,
 ) -> None:
     owner_headers = await login(api_client, tenant_with_case)
     await api_client.post(
@@ -540,7 +557,9 @@ async def test_paralegal_can_submit_intake_and_add_documents(
 
 
 async def test_intake_endpoints_are_isolated_between_tenants(
-    api_client: AsyncClient, tenant_with_case: TenantFixture, other_tenant: TenantFixture
+    api_client: AsyncClient,
+    tenant_with_case: TenantFixture,
+    other_tenant: TenantFixture,
 ) -> None:
     headers_a = await login(api_client, tenant_with_case)
     headers_b = await login(api_client, other_tenant)
@@ -582,7 +601,9 @@ async def test_intake_endpoints_are_isolated_between_tenants(
 
 
 async def test_document_checklist_item_is_isolated_between_tenants(
-    api_client: AsyncClient, tenant_with_case: TenantFixture, other_tenant: TenantFixture
+    api_client: AsyncClient,
+    tenant_with_case: TenantFixture,
+    other_tenant: TenantFixture,
 ) -> None:
     headers_a = await login(api_client, tenant_with_case)
     headers_b = await login(api_client, other_tenant)

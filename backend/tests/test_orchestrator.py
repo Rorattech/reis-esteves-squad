@@ -6,8 +6,6 @@ import uuid
 import pytest
 
 from app.core.db import async_session_factory, scope_session_to_tenant
-from app.models.case import Case
-from app.models.enums import FraudType, UrgencyLevel
 from orchestrator.checkpoints import load_latest_checkpoint, save_checkpoint
 from orchestrator.graphs.intake import (
     IntakeContext,
@@ -17,7 +15,7 @@ from orchestrator.graphs.intake import (
 )
 from orchestrator.router import route
 from orchestrator.state import CaseState
-from tests.conftest import TenantFixture
+from tests.conftest import TenantFixture, create_case_row
 from tests.llm_stubs import StubLLMClient
 
 
@@ -25,7 +23,10 @@ def _blank_state(*, case_id: str, tenant_id: str) -> CaseState:
     return CaseState(
         case_id=case_id,
         tenant_id=tenant_id,
+        case_code="CAS-2026-000001",
         narrative="Relato de teste.",
+        client_city=None,
+        client_state=None,
         platform="whatsapp",
         fraud_type="pix",
         urgency="high",
@@ -144,15 +145,7 @@ async def test_checkpoint_round_trip_preserves_case_state(
 ) -> None:
     async with async_session_factory() as session:
         scope_session_to_tenant(session, tenant.tenant_id)
-        case = Case(
-            tenant_id=tenant.tenant_id,
-            user_id=tenant.user_id,
-            platform="whatsapp",
-            fraud_type=FraudType.PIX,
-            urgency=UrgencyLevel.HIGH,
-        )
-        session.add(case)
-        await session.flush()
+        case = await create_case_row(session, tenant)
 
         state = _blank_state(case_id=str(case.id), tenant_id=str(tenant.tenant_id))
         state.update(bootstrap_case(state))

@@ -12,7 +12,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import AuditActor, CaseArea, CaseStatus, FraudType, ModuleName, UrgencyLevel
+from app.models.enums import (
+    AuditActor,
+    CaseArea,
+    CaseStatus,
+    FraudType,
+    ModuleName,
+    UrgencyLevel,
+)
 
 
 class IntakeOutcomeSchema(str, enum.Enum):
@@ -64,8 +71,12 @@ class IntakeReviewRequest(BaseModel):
 
     decision: IntakeReviewDecision
     notes: str | None = Field(default=None, max_length=4000)
-    platform: str | None = Field(default=None, min_length=1, max_length=100)
-    fraud_type: FraudType | None = None
+    # Correção de classificação escolhe entradas do catálogo do escritório, não
+    # texto livre: `cases.platform`/`cases.fraud_type` são derivados delas desde
+    # a Fase 2.7 (ver app/models/catalog.py). Cadastrar uma entrada nova é uma
+    # chamada separada a POST /api/v1/catalog/....
+    platform_id: uuid.UUID | None = None
+    fraud_modality_id: uuid.UUID | None = None
     urgency: UrgencyLevel | None = None
     area: CaseArea | None = None
     matter: str | None = Field(default=None, max_length=255)

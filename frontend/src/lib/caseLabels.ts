@@ -6,15 +6,38 @@ import type {
   EvidenceProcessingStatus,
   FraudType,
   IntakeOutcome,
+  MaritalStatus,
+  PersonType,
   UrgencyLevel,
 } from "@/types/api";
 
+/**
+ * Famílias de golpe. Desde a Fase 2.7 o advogado escolhe uma **modalidade** do
+ * catálogo do escritório (texto livre cadastrável), e cada modalidade aponta
+ * para uma destas famílias — que é o que os agentes leem. Use estes rótulos só
+ * onde a família importa; para exibir a classificação do caso, prefira
+ * `case.fraud_modality.label`.
+ */
 export const FRAUD_TYPE_LABELS: Record<FraudType, string> = {
   pix: "Golpe PIX",
   marketplace: "Marketplace",
   fake_profile: "Perfil falso",
   fake_lawyer: "Falso advogado",
   other: "Outro",
+};
+
+export const PERSON_TYPE_LABELS: Record<PersonType, string> = {
+  individual: "Pessoa física",
+  company: "Pessoa jurídica",
+};
+
+export const MARITAL_STATUS_LABELS: Record<MaritalStatus, string> = {
+  single: "Solteiro(a)",
+  married: "Casado(a)",
+  divorced: "Divorciado(a)",
+  widowed: "Viúvo(a)",
+  separated: "Separado(a)",
+  stable_union: "União estável",
 };
 
 export const URGENCY_LABELS: Record<UrgencyLevel, string> = {

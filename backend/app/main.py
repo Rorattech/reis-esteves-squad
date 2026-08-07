@@ -9,6 +9,8 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.cases import router as cases_router
+from app.api.v1.catalog import router as catalog_router
+from app.api.v1.clients import router as clients_router
 from app.api.v1.evidence import router as evidence_router
 from app.api.v1.intake import router as intake_router
 from app.core.config import settings
@@ -39,6 +41,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(clients_router, prefix="/api/v1")
+app.include_router(catalog_router, prefix="/api/v1")
 app.include_router(cases_router, prefix="/api/v1")
 app.include_router(intake_router, prefix="/api/v1")
 app.include_router(evidence_router, prefix="/api/v1")

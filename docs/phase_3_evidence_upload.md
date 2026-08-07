@@ -69,6 +69,13 @@ lista as execuções com o texto derivado.
 plataforma). O LLM entra só via `LLMClient` injetado (`EvidenceContext`);
 prompts em `prompts/digital/evidence/{documental,specialist}.md`.
 
+Desde a Fase 2.7 os dois nós recebem também o **código do caso**
+(`case_code`), e o `specialist` recebe **município e UF do cliente** — é o que
+permite recomendar o foro do consumidor (CDC art. 101, I), que o prompt sempre
+pediu e não tinha como responder. Nome, CPF, RG e endereço completo **não**
+trafegam: o cabeçalho dos relatórios identifica o processo pelo código, nunca
+pela pessoa (ver `docs/phase_2_intake_domain.md`).
+
 Garantias implementadas no grafo (não no prompt):
 
 - **Rastreabilidade forçada**: achado `fact`/`inference` sem

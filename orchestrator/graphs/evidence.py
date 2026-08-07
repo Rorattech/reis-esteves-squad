@@ -80,7 +80,13 @@ class FindingModel(BaseModel):
     source_evidence_id: str | None = None
     category: FindingCategory
     evidence_type: Literal[
-        "screenshot", "payment_receipt", "fake_profile", "conversation", "url", "document", "other"
+        "screenshot",
+        "payment_receipt",
+        "fake_profile",
+        "conversation",
+        "url",
+        "document",
+        "other",
     ]
     summary: str
     relevance: Literal["low", "medium", "high"]
@@ -94,7 +100,13 @@ class DocumentalItemAnalysis(BaseModel):
 
     evidence_id: str
     evidence_type: Literal[
-        "screenshot", "payment_receipt", "fake_profile", "conversation", "url", "document", "other"
+        "screenshot",
+        "payment_receipt",
+        "fake_profile",
+        "conversation",
+        "url",
+        "document",
+        "other",
     ]
     description: str
     relevance: Literal["low", "medium", "high"]
@@ -271,9 +283,7 @@ def _records_payload(records: list[EvidenceRecord]) -> list[dict[str, Any]]:
     return [record.model_dump(mode="json") for record in records]
 
 
-async def documental(
-    state: CaseState, runtime: Runtime[EvidenceContext]
-) -> dict[str, Any]:
+async def documental(state: CaseState, runtime: Runtime[EvidenceContext]) -> dict[str, Any]:
     """Cria o inventário probatório rastreável (documentos, prints, lacunas).
 
     Cada item analisado e cada achado apontam para a evidência de origem; o
@@ -298,6 +308,9 @@ async def documental(
     """
     bundle = load_prompt_bundle("digital", "evidence", "documental")
     user_input = {
+        # case_code, e não o nome do cliente: o cabeçalho do relatório precisa
+        # identificar o processo sem mandar dado pessoal para o modelo.
+        "case_code": state["case_code"],
         "platform": state["platform"],
         "fraud_type": state["fraud_type"],
         "matter": state["matter"],
@@ -327,9 +340,7 @@ async def documental(
     inventory = [
         EvidenceItem(
             evidence_id=item.evidence_id,
-            evidence_type=(
-                item.evidence_type if item.evidence_type in item_types else "other"
-            ),
+            evidence_type=(item.evidence_type if item.evidence_type in item_types else "other"),
             file_reference=records_by_id[item.evidence_id].filename,
             description=item.description,
             relevance=item.relevance,
@@ -367,16 +378,12 @@ async def documental(
     return {
         "evidence_inventory": inventory,
         "evidence_findings": findings,
-        "documents_requested": sorted(
-            {*state["documents_requested"], *parsed.missing_documents}
-        ),
+        "documents_requested": sorted({*state["documents_requested"], *parsed.missing_documents}),
         "audit_trail": [*state["audit_trail"], audit_entry],
     }
 
 
-async def specialist(
-    state: CaseState, runtime: Runtime[EvidenceContext]
-) -> dict[str, Any]:
+async def specialist(state: CaseState, runtime: Runtime[EvidenceContext]) -> dict[str, Any]:
     """Contextualiza tecnicamente as evidências na plataforma e modalidade.
 
     Distingue fato extraído, inferência técnica e informação pendente
@@ -403,9 +410,14 @@ async def specialist(
     """
     bundle = load_prompt_bundle("digital", "evidence", "specialist")
     user_input = {
+        "case_code": state["case_code"],
         "platform": state["platform"],
         "fraud_type": state["fraud_type"],
         "matter": state["matter"],
+        # Comarca do cliente: base do foro do consumidor (CDC art. 101, I), que
+        # o prompt precisa recomendar. Nome/CPF/endereço completo nunca vêm.
+        "client_city": state["client_city"],
+        "client_state": state["client_state"],
         "evidence_records": _records_payload(state["evidence_records"]),
         "documental_findings": [
             finding.model_dump(mode="json") for finding in state["evidence_findings"]

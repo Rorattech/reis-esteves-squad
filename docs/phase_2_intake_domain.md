@@ -54,9 +54,8 @@ commitar:
   `update_checklist_item`.
 
 `case_intake_service`/`case_document_service` são consumidos pela API HTTP
-da Fase 2.4 (`app/api/v1/intake.py`, ver docs/intake_api.md);
-`client_service` ainda não tem rota própria — permanece disponível para uma
-futura tela de cadastro de clientes.
+da Fase 2.4 (`app/api/v1/intake.py`, ver docs/intake_api.md); `client_service`
+é consumido por `app/api/v1/clients.py` (Fase 2.7, abaixo).
 
 ## Testes
 
@@ -89,4 +88,136 @@ via `uuid5` + `ON CONFLICT ... DO NOTHING`) — seguro rodar
 ## API HTTP (Fase 2.4)
 
 Endpoints de intake/checklist/execução/revisão/auditoria documentados em
-docs/intake_api.md. `client_service.py` segue sem rota própria.
+docs/intake_api.md.
+
+---
+
+# Fase 2.7 — Cliente, identificadores legíveis e catálogos
+
+Retrabalho da abertura de caso. Decisões e alternativas rejeitadas em
+[`docs/adr/0004-identificadores-legiveis-e-catalogos-de-classificacao.md`](./adr/0004-identificadores-legiveis-e-catalogos-de-classificacao.md).
+
+## O problema
+
+O modelo `Client` existia desde `41280d8b096c`, com serviço e schemas
+auditados, mas **sem rota HTTP e sem tela**. Na prática o formulário de novo
+caso pedia ao advogado que colasse um UUID à mão ("Token do cliente") e a
+lista de casos exibia esse UUID na coluna "Cliente". Além disso a plataforma
+era texto livre (três grafias viravam três plataformas) enquanto a modalidade
+era um enum fechado de cinco valores — o inverso do que o produto precisa.
+
+## Identificadores
+
+| Série | Formato | Reinicia por ano |
+|---|---|---|
+| Caso | `CAS-2026-000123` | sim |
+| Cliente | `CLI-000042` | não |
+
+Emitidos por `app/core/identifiers.py`, contados por escritório em
+`tenant_counters` (uma `SEQUENCE` do Postgres é global e faria o segundo
+escritório começar de onde o primeiro parou). A alocação é uma única
+instrução `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`, cujo row lock
+serializa requests concorrentes; o ano vem de `America/Sao_Paulo`.
+
+O UUID continua sendo PK e o que aparece na URL — **nunca é exibido**.
+
+## Qualificação do cliente
+
+`clients` ganhou `code`, `person_type` (PF/PJ), RG + órgão emissor,
+nascimento, nacionalidade, estado civil, profissão e endereço completo. São
+os campos que a petição inicial exige (CPC art. 319, II), e o município/UF é
+o que fixa o foro do consumidor (CDC art. 101, I).
+
+CPF/CNPJ são validados por dígito verificador e **normalizados para só
+dígitos** (`app/core/documents.py`, espelhado em
+`frontend/src/lib/documents.ts`): sem isso, `529.982.247-25` e `52998224725`
+passariam como clientes diferentes na checagem de duplicidade.
+
+### Segurança — CPF não é credencial
+
+CPF/CNPJ é **chave de vinculação interna, nunca fator de autenticação**. CPF
+no Brasil é dado amplamente vazado: um portal futuro que libere o dossiê a
+quem "informar o CPF" seria incidente de LGPD, não funcionalidade. A
+autenticação de um cliente exigirá posse verificada (OTP no telefone/e-mail
+cadastrado) ou token por caso emitido pelo advogado.
+
+E a distinção que costuma confundir: mesmo quando o **processo judicial** é
+público (CPC art. 189), o **dossiê neste sistema** — evidências, estratégia,
+minuta — é coberto por sigilo profissional (EOAB art. 34, VII) e não é
+público em hipótese alguma.
+
+## Catálogos de classificação
+
+`platforms` e `fraud_modalities` (`app/models/catalog.py`), com
+`tenant_id NOT NULL` + RLS como toda tabela do projeto. Semeadas a partir de
+`app/core/catalog_defaults.py` sob demanda, na primeira leitura do catálogo
+(`ensure_catalog_seeded`) — reconciliando **por slug**, então entradas novas
+no arquivo de defaults chegam a escritórios antigos sem migration.
+
+Cada modalidade declara uma `family` do enum `FraudType` existente. O
+escritório cadastra "golpe da falsa central de atendimento" e diz que é da
+família `pix`; grafo e prompts continuam raciocinando sobre as cinco
+famílias que conhecem. `cases.platform` (texto) e `cases.fraud_type` (enum)
+permanecem como rótulo e família **denormalizados** — derivados, nunca
+escritos direto.
+
+## Efeitos no fluxo do caso
+
+- `CaseCreate` aceita `client_id` (existente) **ou** `client` (novo,
+  cadastrado na mesma transação do caso — um caso que falha não deixa
+  cliente órfão). Os dois juntos são 422.
+- A busca de casos e de clientes foi para o servidor: passou a incluir o
+  nome do cliente, e filtrar no navegador exigiria baixar a base inteira com
+  os nomes. **É `POST .../search`, com o termo no corpo** — query string vaza
+  para access log do servidor, histórico do navegador, cabeçalho Referer e
+  cache de proxy, e o termo pode ser um CPF ou um nome (CLAUDE.md, seção 12).
+  Os `GET` continuam existindo para listagem simples, sem termo.
+- A triagem **não escreve mais** `platform`/`fraud_type` no caso
+  (`orchestrator/graphs/intake.py`): ela recomenda, e a classificação só
+  muda por correção humana explícita com `platform_id`/`fraud_modality_id`
+  (CLAUDE.md, seção 2).
+- `CaseState` ganhou `case_code`, `client_city` e `client_state` — e nada
+  além disso. Nome, CPF, RG e endereço completo nunca vão para o modelo de
+  IA; o cabeçalho dos relatórios usa o código do caso.
+
+## Rotas
+
+| Método | Rota | Papel |
+|---|---|---|
+| POST | `/api/v1/clients` | admin / lawyer / paralegal |
+| POST | `/api/v1/clients/search` | autenticado (termo no corpo) |
+| GET | `/api/v1/clients?limit=` | autenticado (sem termo) |
+| GET | `/api/v1/clients/{id}` | autenticado |
+| PATCH | `/api/v1/clients/{id}` | admin / lawyer / paralegal |
+| POST | `/api/v1/cases/search` | autenticado (termo no corpo) |
+| GET \| POST | `/api/v1/catalog/platforms` | GET autenticado, POST operacional |
+| GET \| POST | `/api/v1/catalog/fraud-modalities` | GET autenticado, POST operacional |
+
+`CaseResponse` ganhou `code`, `client` (`ClientSummary` — id, código e nome,
+**sem documento**), `platform_entry` e `fraud_modality`. As rotas que a
+devolvem precisam de `CASE_RESPONSE_RELATIONSHIPS` (`app/api/v1/cases.py`):
+sem o eager load, o Pydantic dispara lazy load em contexto async e estoura
+`MissingGreenlet`.
+
+## Interface
+
+- `/clients`, `/clients/new`, `/clients/{id}` — lista com busca, cadastro com
+  qualificação completa e ficha com os casos vinculados.
+- `ClientPicker` (busca por nome/CPF/código, com cadastro inline) substituiu
+  o campo "Token do cliente" em `/cases/new` e na edição do caso.
+- `PlatformSelect`/`FraudModalitySelect` (`components/cases/CatalogSelect.tsx`)
+  são reutilizados em novo caso, edição, relato inicial e correção da
+  triagem — sempre com a opção "Outro (cadastrar)".
+- Lista e cabeçalho do caso exibem `CAS-2026-000123 · Nome do Cliente`.
+  Nenhum UUID aparece em tela.
+
+## Testes
+
+Backend: `test_documents.py`, `test_identifiers.py` (incluindo concorrência e
+rollback), `test_clients_api.py`, `test_catalog_api.py` e `test_cases_api.py`
+(transação atômica caso+cliente, isolamento de catálogo cross-tenant, busca
+por nome do cliente).
+
+Frontend: `page.test.tsx` das rotas de cliente, do novo caso e da edição.
+As fábricas de objetos de domínio ficam em `src/test/factories.ts` — antes
+`makeCase` estava duplicado em sete arquivos de teste.

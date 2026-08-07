@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +6,23 @@ import { ApiError } from "@/services/api";
 import type { Case, CaseIntake, IntakeResult, User } from "@/types/api";
 
 import CaseIntakePage from "./page";
+import {
+  makeCase as makeBaseCase,
+  makeFraudModality,
+  makePlatform,
+} from "@/test/factories";
+
+const MERCADO_LIVRE = makePlatform({
+  id: "platform-3",
+  slug: "mercado_livre",
+  label: "Mercado Livre",
+  sort_order: 50,
+});
+
+/** Caso base destes testes — há uma recomendação de triagem pendente de revisão. */
+function makeCase(overrides: Partial<Case> = {}): Case {
+  return makeBaseCase({ status: "pending_approval", ...overrides });
+}
 
 const {
   getCaseMock,
@@ -18,6 +35,8 @@ const {
   listCaseDocumentsMock,
   getAuditLogMock,
   advanceCaseStageMock,
+  listPlatformsMock,
+  listFraudModalitiesMock,
 } = vi.hoisted(() => ({
   getCaseMock: vi.fn(),
   getCaseIntakeMock: vi.fn(),
@@ -29,6 +48,8 @@ const {
   listCaseDocumentsMock: vi.fn(),
   getAuditLogMock: vi.fn(),
   advanceCaseStageMock: vi.fn(),
+  listPlatformsMock: vi.fn(),
+  listFraudModalitiesMock: vi.fn(),
 }));
 
 vi.mock("@/services/api", async () => {
@@ -47,6 +68,8 @@ vi.mock("@/services/api", async () => {
       listCaseDocuments: listCaseDocumentsMock,
       getAuditLog: getAuditLogMock,
       advanceCaseStage: advanceCaseStageMock,
+      listPlatforms: listPlatformsMock,
+      listFraudModalities: listFraudModalitiesMock,
     },
   };
 });
@@ -58,25 +81,6 @@ vi.mock("next/navigation", () => ({
 const useAuthMock = vi.fn();
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => useAuthMock() }));
 
-function makeCase(overrides: Partial<Case> = {}): Case {
-  return {
-    id: "55555555-5555-5555-5555-555555555555",
-    tenant_id: "tenant-1",
-    user_id: "user-1",
-    client_id: null,
-    area: null,
-    matter: null,
-    platform: "whatsapp",
-    fraud_type: "pix",
-    urgency: "high",
-    status: "pending_approval",
-    current_module: "intake",
-    human_review_required: true,
-    created_at: "2026-07-01T10:00:00Z",
-    updated_at: "2026-07-02T10:00:00Z",
-    ...overrides,
-  };
-}
 
 function makeIntake(overrides: Partial<CaseIntake> = {}): CaseIntake {
   return {
@@ -139,6 +143,8 @@ beforeEach(() => {
     listCaseDocumentsMock,
     getAuditLogMock,
     advanceCaseStageMock,
+    listPlatformsMock,
+    listFraudModalitiesMock,
   ]) {
     mock.mockReset();
   }
@@ -151,6 +157,8 @@ beforeEach(() => {
   getIntakeResultMock.mockResolvedValue(makeResult());
   listCaseDocumentsMock.mockResolvedValue([]);
   getAuditLogMock.mockResolvedValue([]);
+  listPlatformsMock.mockResolvedValue([makePlatform(), MERCADO_LIVRE]);
+  listFraudModalitiesMock.mockResolvedValue([makeFraudModality()]);
 });
 
 describe("CaseIntakePage — carregamento", () => {
@@ -278,16 +286,23 @@ describe("CaseIntakePage — revisão humana", () => {
       screen.getByLabelText("Justificativa da correção"),
       "Plataforma correta é Mercado Livre, não WhatsApp.",
     );
-    await userEvent.clear(screen.getByLabelText("Plataforma"));
-    await userEvent.type(screen.getByLabelText("Plataforma"), "Mercado Livre");
+    // A correção escolhe uma entrada do catálogo — não digita texto livre.
+    // Escopado ao formulário de correção: a aba também tem o formulário de
+    // relato, com um seletor de plataforma próprio.
+    const correctionForm = screen
+      .getByRole("button", { name: "Confirmar correção" })
+      .closest("form") as HTMLFormElement;
+    await userEvent.selectOptions(
+      within(correctionForm).getByLabelText("Plataforma envolvida"),
+      MERCADO_LIVRE.id,
+    );
     await userEvent.click(screen.getByRole("button", { name: "Confirmar correção" }));
 
     await waitFor(() =>
       expect(reviewIntakeMock).toHaveBeenCalledWith("55555555-5555-5555-5555-555555555555", {
         decision: "correct",
         notes: "Plataforma correta é Mercado Livre, não WhatsApp.",
-        platform: "Mercado Livre",
-        fraud_type: "pix",
+        platform_id: MERCADO_LIVRE.id,
         urgency: "high",
         area: "digital",
         matter: "golpe do PIX via WhatsApp clonado",

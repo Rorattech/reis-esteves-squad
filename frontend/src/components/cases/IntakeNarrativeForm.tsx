@@ -5,9 +5,11 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { FRAUD_TYPE_LABELS, URGENCY_LABELS } from "@/lib/caseLabels";
+import { FraudModalitySelect, PlatformSelect } from "@/components/cases/CatalogSelect";
+import { useCatalog } from "@/hooks/useCatalog";
+import { URGENCY_LABELS } from "@/lib/caseLabels";
 import { ApiError, api } from "@/services/api";
-import type { Case, CaseIntake, FraudType, UrgencyLevel } from "@/types/api";
+import type { Case, CaseIntake, UrgencyLevel } from "@/types/api";
 
 /**
  * Espelha CaseUpdate (platform/fraud_type/urgency, backend/app/models/schemas/case.py)
@@ -16,10 +18,6 @@ import type { Case, CaseIntake, FraudType, UrgencyLevel } from "@/types/api";
  * item — list[str] no schema real, sem campo de lista dinâmica dedicado.
  */
 const narrativeFormSchema = z.object({
-  platform: z.string().trim().min(1, "Informe a plataforma envolvida.").max(100, "Máximo de 100 caracteres."),
-  fraud_type: z.enum(["pix", "marketplace", "fake_profile", "fake_lawyer", "other"], {
-    message: "Selecione a modalidade do golpe.",
-  }),
   urgency: z.enum(["low", "medium", "high", "critical"], {
     message: "Selecione a urgência relatada.",
   }),
@@ -33,7 +31,6 @@ const narrativeFormSchema = z.object({
 
 type NarrativeFormValues = z.infer<typeof narrativeFormSchema>;
 
-const FRAUD_TYPE_OPTIONS = Object.entries(FRAUD_TYPE_LABELS) as [FraudType, string][];
 const URGENCY_OPTIONS = Object.entries(URGENCY_LABELS) as [UrgencyLevel, string][];
 
 function linesToList(value: string | undefined): string[] {
@@ -64,6 +61,12 @@ interface IntakeNarrativeFormProps {
  */
 export function IntakeNarrativeForm({ caseData, intake, canWrite, onSaved }: IntakeNarrativeFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const { platforms, modalities, reload: reloadCatalog } = useCatalog();
+
+  // Classificação vem do catálogo do escritório, então mora em estado local e
+  // não no schema do formulário — o zod aqui cobre só os campos do relato.
+  const [platformId, setPlatformId] = useState(caseData.platform_entry.id);
+  const [fraudModalityId, setFraudModalityId] = useState(caseData.fraud_modality.id);
 
   const {
     register,
@@ -72,8 +75,6 @@ export function IntakeNarrativeForm({ caseData, intake, canWrite, onSaved }: Int
   } = useForm<NarrativeFormValues>({
     resolver: zodResolver(narrativeFormSchema),
     values: {
-      platform: caseData.platform,
-      fraud_type: caseData.fraud_type,
       urgency: caseData.urgency,
       narrative: intake?.narrative ?? "",
       estimated_loss_amount: intake?.estimated_loss_amount ?? "",
@@ -89,8 +90,8 @@ export function IntakeNarrativeForm({ caseData, intake, canWrite, onSaved }: Int
     setFormError(null);
     try {
       await api.updateCase(caseData.id, {
-        platform: values.platform,
-        fraud_type: values.fraud_type,
+        platform_id: platformId,
+        fraud_modality_id: fraudModalityId,
         urgency: values.urgency,
       });
       await api.submitCaseIntake(caseData.id, {
@@ -120,38 +121,19 @@ export function IntakeNarrativeForm({ caseData, intake, canWrite, onSaved }: Int
     >
       <fieldset disabled={!canWrite || isSubmitting} className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div>
-            <label htmlFor="platform" className="block text-sm font-medium text-slate-700">
-              Plataforma envolvida
-            </label>
-            <input
-              id="platform"
-              type="text"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-              {...register("platform")}
-            />
-            {errors.platform && <p className="mt-1 text-xs text-red-600">{errors.platform.message}</p>}
-          </div>
+          <PlatformSelect
+            platforms={platforms}
+            value={platformId}
+            onChange={setPlatformId}
+            onCreated={reloadCatalog}
+          />
 
-          <div>
-            <label htmlFor="fraud_type" className="block text-sm font-medium text-slate-700">
-              Modalidade do golpe
-            </label>
-            <select
-              id="fraud_type"
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-              {...register("fraud_type")}
-            >
-              {FRAUD_TYPE_OPTIONS.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            {errors.fraud_type && (
-              <p className="mt-1 text-xs text-red-600">{errors.fraud_type.message}</p>
-            )}
-          </div>
+          <FraudModalitySelect
+            modalities={modalities}
+            value={fraudModalityId}
+            onChange={setFraudModalityId}
+            onCreated={reloadCatalog}
+          />
 
           <div>
             <label htmlFor="urgency" className="block text-sm font-medium text-slate-700">

@@ -8,24 +8,28 @@ from app.core.security import hash_password
 from app.models.audit_log import AuditLog
 from app.models.enums import UserRole
 from app.models.user import User
-from tests.conftest import TenantFixture, login
-
-_CASE_PAYLOAD = {"platform": "shopee", "fraud_type": "marketplace", "urgency": "medium"}
+from tests.conftest import TenantFixture, case_payload, login
 
 
 async def test_viewer_cannot_create_case(
     api_client: AsyncClient, viewer_tenant: TenantFixture
 ) -> None:
     headers = await login(api_client, viewer_tenant)
-    response = await api_client.post("/api/v1/cases", json=_CASE_PAYLOAD, headers=headers)
+    response = await api_client.post(
+        "/api/v1/cases", json=await case_payload(api_client, headers), headers=headers
+    )
     assert response.status_code == 403
 
 
 async def test_admin_can_create_case(api_client: AsyncClient, tenant: TenantFixture) -> None:
     headers = await login(api_client, tenant)
-    response = await api_client.post("/api/v1/cases", json=_CASE_PAYLOAD, headers=headers)
+    response = await api_client.post(
+        "/api/v1/cases", json=await case_payload(api_client, headers), headers=headers
+    )
     assert response.status_code == 201, response.text
-    assert response.json()["platform"] == "shopee"
+    body = response.json()
+    assert body["platform"] == "WhatsApp"
+    assert body["code"].startswith("CAS-")
 
 
 async def test_viewer_can_list_cases(
@@ -39,7 +43,9 @@ async def test_viewer_can_list_cases(
 
 
 async def test_viewer_cannot_update_case(
-    api_client: AsyncClient, tenant_with_case: TenantFixture, viewer_tenant: TenantFixture
+    api_client: AsyncClient,
+    tenant_with_case: TenantFixture,
+    viewer_tenant: TenantFixture,
 ) -> None:
     # Um viewer do MESMO tenant do caso ainda assim não pode editar — RBAC é
     # sobre papel, não sobre dono do recurso.
@@ -130,7 +136,9 @@ async def test_paralegal_cannot_delete_case(
 
 
 async def test_cannot_delete_case_of_another_tenant(
-    api_client: AsyncClient, tenant_with_case: TenantFixture, other_tenant: TenantFixture
+    api_client: AsyncClient,
+    tenant_with_case: TenantFixture,
+    other_tenant: TenantFixture,
 ) -> None:
     headers = await login(api_client, other_tenant)
     response = await api_client.delete(f"/api/v1/cases/{tenant_with_case.case_id}", headers=headers)

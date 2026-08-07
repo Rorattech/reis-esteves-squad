@@ -15,9 +15,11 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.audit import audit_entry_to_orm, create_audit_entry
 from app.models.case import Case
+from app.models.catalog import FraudModality, Platform
 from app.models.enums import CaseStatus, ModuleName
 from app.models.schemas.intake import (
     CaseStageAdvanceRequest,
@@ -49,10 +51,58 @@ class StageAdvanceConflictError(Exception):
     """Levantada quando o caso não está no módulo intake e portanto não tem o que avançar."""
 
 
+class CatalogEntryNotFoundError(Exception):
+    """Levantada quando a entrada de catálogo corrigida não existe neste escritório."""
+
+
 async def _get_case_for_tenant(
     session: AsyncSession, tenant_id: uuid.UUID, case_id: uuid.UUID
 ) -> Case | None:
-    return await session.scalar(select(Case).where(Case.tenant_id == tenant_id, Case.id == case_id))
+    # selectinload(Case.client): _build_initial_state lê a comarca do cliente
+    # para o CaseState, e um lazy load aqui estouraria MissingGreenlet no
+    # contexto async.
+    return await session.scalar(
+        select(Case)
+        .where(Case.tenant_id == tenant_id, Case.id == case_id)
+        .options(selectinload(Case.client))
+    )
+
+
+async def _get_platform_for_tenant(
+    session: AsyncSession, tenant_id: uuid.UUID, platform_id: uuid.UUID
+) -> Platform:
+    """Carrega uma plataforma do catálogo do próprio escritório.
+
+    A FK não garante isolamento (a RLS valida apenas a linha de `cases`), então
+    a checagem de tenant é explícita — mesmo padrão de app/api/v1/cases.py.
+
+    Raises:
+        CatalogEntryNotFoundError: Se a plataforma não existir neste tenant.
+    """
+    platform = await session.scalar(
+        select(Platform).where(Platform.tenant_id == tenant_id, Platform.id == platform_id)
+    )
+    if platform is None:
+        raise CatalogEntryNotFoundError("Plataforma não encontrada no catálogo.")
+    return platform
+
+
+async def _get_modality_for_tenant(
+    session: AsyncSession, tenant_id: uuid.UUID, fraud_modality_id: uuid.UUID
+) -> FraudModality:
+    """Carrega uma modalidade do catálogo do próprio escritório.
+
+    Raises:
+        CatalogEntryNotFoundError: Se a modalidade não existir neste tenant.
+    """
+    modality = await session.scalar(
+        select(FraudModality).where(
+            FraudModality.tenant_id == tenant_id, FraudModality.id == fraud_modality_id
+        )
+    )
+    if modality is None:
+        raise CatalogEntryNotFoundError("Modalidade não encontrada no catálogo.")
+    return modality
 
 
 def _build_initial_state(*, case: Case, tenant_id: uuid.UUID, narrative: str) -> CaseState:
@@ -66,7 +116,10 @@ def _build_initial_state(*, case: Case, tenant_id: uuid.UUID, narrative: str) ->
     return CaseState(
         case_id=str(case.id),
         tenant_id=str(tenant_id),
+        case_code=case.code,
         narrative=narrative,
+        client_city=case.client.address_city if case.client else None,
+        client_state=case.client.address_state if case.client else None,
         platform=case.platform,
         fraud_type=case.fraud_type.value,
         urgency=case.urgency.value,
@@ -95,7 +148,11 @@ def _build_initial_state(*, case: Case, tenant_id: uuid.UUID, narrative: str) ->
 
 
 async def run_intake(
-    session: AsyncSession, *, tenant_id: uuid.UUID, case_id: uuid.UUID, llm_client: LLMClient
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    case_id: uuid.UUID,
+    llm_client: LLMClient,
 ) -> tuple[Case, CaseState] | None:
     """Executa o grafo do módulo Intake (coordinator + triage) para um caso.
 
@@ -203,10 +260,16 @@ async def review_intake_recommendation(
     before = _case_classification_snapshot(case)
 
     if payload.decision == IntakeReviewDecision.CORRECT:
-        if payload.platform is not None:
-            case.platform = payload.platform
-        if payload.fraud_type is not None:
-            case.fraud_type = payload.fraud_type
+        # Trocar a entrada de catálogo re-deriva os campos denormalizados —
+        # `platform` e `fraud_type` nunca são escritos direto (Fase 2.7).
+        if payload.platform_id is not None:
+            platform = await _get_platform_for_tenant(session, tenant_id, payload.platform_id)
+            case.platform_id = platform.id
+            case.platform = platform.label
+        if payload.fraud_modality_id is not None:
+            modality = await _get_modality_for_tenant(session, tenant_id, payload.fraud_modality_id)
+            case.fraud_modality_id = modality.id
+            case.fraud_type = modality.family
         if payload.urgency is not None:
             case.urgency = payload.urgency
         if payload.area is not None:
@@ -336,7 +399,9 @@ async def advance_case_to_evidence(
 def _case_classification_snapshot(case: Case) -> dict[str, Any]:
     return {
         "platform": case.platform,
+        "platform_id": str(case.platform_id),
         "fraud_type": case.fraud_type.value,
+        "fraud_modality_id": str(case.fraud_modality_id),
         "urgency": case.urgency.value,
         "area": case.area.value if case.area else None,
         "matter": case.matter,

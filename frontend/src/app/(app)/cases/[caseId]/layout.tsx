@@ -43,9 +43,16 @@ export default function CaseLayout({ children }: { children: ReactNode }) {
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h1 className="text-lg font-semibold text-slate-900">{caseData.platform}</h1>
+              {/* O código é o rótulo do caso — o UUID fica só na URL. */}
+              <h1 className="text-lg font-semibold text-slate-900">
+                {caseData.code}
+                {caseData.client ? (
+                  <span className="font-normal text-slate-500"> · {caseData.client.full_name}</span>
+                ) : null}
+              </h1>
               <p className="text-sm text-slate-500">
-                Caso aberto em {new Date(caseData.created_at).toLocaleDateString("pt-BR")}
+                {caseData.platform} · Caso aberto em{" "}
+                {new Date(caseData.created_at).toLocaleDateString("pt-BR")}
               </p>
             </div>
             <StatusBadge status={caseData.status} />

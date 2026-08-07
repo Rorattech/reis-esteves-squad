@@ -85,8 +85,10 @@ Serviços disponíveis:
 
 ### Login de teste
 
-As migrations já semeiam um tenant, um usuário admin e 7 casos fictícios do Squad
-Digital para testes manuais (só em `BACKEND_ENV=development`, nunca em produção):
+As migrations já semeiam um tenant, um usuário admin, o catálogo de classificação
+(plataformas e modalidades de golpe) e 7 casos fictícios do Squad Digital, com
+clientes e códigos legíveis (`CAS-2026-000001`), para testes manuais (só em
+`BACKEND_ENV=development`, nunca em produção):
 
 - **E-mail:** `admin@reisesteves.com.br`
 - **Senha:** `ReisEsteves2026!`

@@ -6,6 +6,12 @@ import { ApiError } from "@/services/api";
 import type { Case, EvidenceAnalysisResult, EvidenceFile, User } from "@/types/api";
 
 import CaseEvidenciasPage from "./page";
+import { makeCase as makeBaseCase } from "@/test/factories";
+
+/** Caso base destes testes — o caso destes testes já está na etapa de Evidências. */
+function makeCase(overrides: Partial<Case> = {}): Case {
+  return makeBaseCase({ current_module: "evidence", ...overrides });
+}
 
 const {
   getCaseMock,
@@ -69,25 +75,6 @@ function makeUser(overrides: Partial<User> = {}): User {
   };
 }
 
-function makeCase(overrides: Partial<Case> = {}): Case {
-  return {
-    id: CASE_ID,
-    tenant_id: "tenant-1",
-    user_id: "user-1",
-    client_id: null,
-    area: "digital",
-    matter: "Fraude em marketplace",
-    platform: "facebook_marketplace",
-    fraud_type: "marketplace",
-    urgency: "high",
-    status: "in_progress",
-    current_module: "evidence",
-    human_review_required: false,
-    created_at: "2026-07-01T10:00:00Z",
-    updated_at: "2026-07-02T10:00:00Z",
-    ...overrides,
-  };
-}
 
 function makeEvidence(overrides: Partial<EvidenceFile> = {}): EvidenceFile {
   return {

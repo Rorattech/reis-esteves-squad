@@ -21,16 +21,19 @@ from app.core.db import (
     scope_session_to_tenant,
 )
 from app.models.case import Case
-from app.models.enums import FraudType, UrgencyLevel
-from tests.conftest import TenantFixture, login
+from tests.conftest import TenantFixture, case_payload, create_case_row, login
 
 
-async def test_protected_route_without_token_is_forbidden(api_client: AsyncClient) -> None:
+async def test_protected_route_without_token_is_forbidden(
+    api_client: AsyncClient,
+) -> None:
     response = await api_client.get("/api/v1/cases")
     assert response.status_code == 403
 
 
-async def test_protected_route_with_malformed_bearer_is_forbidden(api_client: AsyncClient) -> None:
+async def test_protected_route_with_malformed_bearer_is_forbidden(
+    api_client: AsyncClient,
+) -> None:
     response = await api_client.get(
         "/api/v1/cases", headers={"Authorization": "Bearer isto-nao-e-um-jwt-valido"}
     )
@@ -86,14 +89,7 @@ async def test_rls_blocks_cross_tenant_read_at_db_level(
     """Mesmo com uma query sem filtro de tenant_id, a RLS não deve vazar dados."""
     async with async_session_factory() as session:
         scope_session_to_tenant(session, tenant.tenant_id)
-        case = Case(
-            tenant_id=tenant.tenant_id,
-            user_id=tenant.user_id,
-            platform="whatsapp",
-            fraud_type=FraudType.PIX,
-            urgency=UrgencyLevel.HIGH,
-        )
-        session.add(case)
+        case = await create_case_row(session, tenant)
         await session.commit()
         case_id = case.id
 
@@ -115,14 +111,7 @@ async def test_rls_blocks_query_without_tenant_guc_set(tenant: TenantFixture) ->
     """Sem app.current_tenant definido na sessão, a RLS nega tudo (fail closed)."""
     async with async_session_factory() as session:
         scope_session_to_tenant(session, tenant.tenant_id)
-        case = Case(
-            tenant_id=tenant.tenant_id,
-            user_id=tenant.user_id,
-            platform="shopee",
-            fraud_type=FraudType.MARKETPLACE,
-            urgency=UrgencyLevel.MEDIUM,
-        )
-        session.add(case)
+        await create_case_row(session, tenant)
         await session.commit()
 
     # get_session() não declara escopo de tenant nenhum, então o listener de
@@ -157,20 +146,13 @@ async def test_tenant_scope_is_reapplied_after_commit_on_another_connection(
 
     async with async_session_factory() as session:
         scope_session_to_tenant(session, tenant.tenant_id)
-        case = Case(
-            tenant_id=tenant.tenant_id,
-            user_id=tenant.user_id,
-            platform="mercado livre",
-            fraud_type=FraudType.MARKETPLACE,
-            urgency=UrgencyLevel.MEDIUM,
-        )
-        session.add(case)
+        case = await create_case_row(session, tenant)
         await session.commit()
 
         # Falhava com InvalidRequestError("Could not refresh instance") antes
         # da correção — a linha existia, mas a RLS a escondia na nova conexão.
         await session.refresh(case)
-        assert case.platform == "mercado livre"
+        assert case.platform == "WhatsApp"
 
 
 async def test_api_returns_404_for_case_of_another_tenant(
@@ -179,7 +161,7 @@ async def test_api_returns_404_for_case_of_another_tenant(
     headers_a = await login(api_client, tenant)
     create_response = await api_client.post(
         "/api/v1/cases",
-        json={"platform": "shopee", "fraud_type": "marketplace", "urgency": "medium"},
+        json=await case_payload(api_client, headers_a),
         headers=headers_a,
     )
     assert create_response.status_code == 201, create_response.text

@@ -97,7 +97,10 @@ def _state(records: list[EvidenceRecord] | None = None) -> CaseState:
     return CaseState(
         case_id="33333333-3333-3333-3333-333333333333",
         tenant_id="44444444-4444-4444-4444-444444444444",
+        case_code="CAS-2026-000042",
         narrative="Comprei um produto no marketplace e nunca recebi.",
+        client_city="Santos",
+        client_state="SP",
         platform="facebook_marketplace",
         fraud_type="marketplace",
         urgency="high",
@@ -231,7 +234,10 @@ async def test_documental_rejects_invented_inventory_item() -> None:
     tampered = {
         **_DOCUMENTAL_OK,
         "items": [
-            {**_DOCUMENTAL_OK["items"][0], "evidence_id": "99999999-9999-9999-9999-999999999999"}
+            {
+                **_DOCUMENTAL_OK["items"][0],
+                "evidence_id": "99999999-9999-9999-9999-999999999999",
+            }
         ],
     }
     stub = StubLLMClient(responses=[tampered])

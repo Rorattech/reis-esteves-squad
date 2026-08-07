@@ -1,11 +1,12 @@
 """Testes de validação dos schemas Pydantic da Fase 2 — Intake e Roteamento."""
 
+import uuid
 from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
-from app.models.enums import CaseArea, DocumentChecklistStatus, FraudType
+from app.models.enums import CaseArea, DocumentChecklistStatus
 from app.models.schemas.case import CaseCreate
 from app.models.schemas.case_document import CaseDocumentCreate
 from app.models.schemas.case_intake import CaseIntakeCreate
@@ -67,15 +68,27 @@ def test_case_document_create_accepts_explicit_status() -> None:
 
 def test_case_create_accepts_optional_area_and_matter() -> None:
     case = CaseCreate(
-        platform="shopee",
-        fraud_type=FraudType.MARKETPLACE,
+        platform_id=uuid.uuid4(),
+        fraud_modality_id=uuid.uuid4(),
         area=CaseArea.DIGITAL,
         matter="golpe marketplace",
     )
     assert case.area == CaseArea.DIGITAL
     assert case.client_id is None
+    assert case.client is None
 
 
 def test_case_create_rejects_invalid_area() -> None:
     with pytest.raises(ValidationError):
-        CaseCreate(platform="shopee", fraud_type=FraudType.MARKETPLACE, area="nao-existe")
+        CaseCreate(platform_id=uuid.uuid4(), fraud_modality_id=uuid.uuid4(), area="nao-existe")
+
+
+def test_case_create_rejects_client_id_and_nested_client_together() -> None:
+    """Informar os dois seria ambíguo — a rota teria de escolher em silêncio."""
+    with pytest.raises(ValidationError):
+        CaseCreate(
+            platform_id=uuid.uuid4(),
+            fraud_modality_id=uuid.uuid4(),
+            client_id=uuid.uuid4(),
+            client=ClientCreate(full_name="Cliente Novo"),
+        )

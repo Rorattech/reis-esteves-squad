@@ -17,7 +17,7 @@ from app.main import app
 from app.models.audit_log import AuditLog
 from app.models.enums import UserRole
 from app.models.user import User
-from tests.conftest import TenantFixture, login
+from tests.conftest import TenantFixture, case_payload, login
 
 _PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 _TXT_BYTES = "conversa exportada do whatsapp\ncliente: fui vitima de golpe".encode()
@@ -131,9 +131,7 @@ async def test_upload_rejects_empty_file(
     auth_headers: dict[str, str],
     storage_root: Path,
 ) -> None:
-    status_code, _ = await _upload(
-        api_client, auth_headers, tenant_with_case.case_id, content=b""
-    )
+    status_code, _ = await _upload(api_client, auth_headers, tenant_with_case.case_id, content=b"")
     assert status_code == 422
 
 
@@ -166,14 +164,12 @@ async def test_same_hash_in_other_tenant_is_not_duplicate(
     other_headers = await login(api_client, other_tenant)
     case_response = await api_client.post(
         "/api/v1/cases",
-        json={"platform": "instagram", "fraud_type": "pix", "urgency": "high"},
+        json=await case_payload(api_client, other_headers, urgency="high"),
         headers=other_headers,
     )
     assert case_response.status_code == 201, case_response.text
 
-    status_code, body = await _upload(
-        api_client, other_headers, case_response.json()["id"]
-    )
+    status_code, body = await _upload(api_client, other_headers, case_response.json()["id"])
     assert status_code == 201
     # Dedup é por tenant — mesmo conteúdo em outro tenant não é duplicata.
     assert body["is_duplicate"] is False
