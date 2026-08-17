@@ -13,9 +13,11 @@ execução.
 > OCR) e o backup testado da Fase 8 precisam estar fechados antes disso. Até lá,
 > use apenas evidências fictícias.
 
+
+
 ## Ordem importa
 
-Uma dependência não-óbvia governa a sequência: **o DNS de `api.` precisa estar
+Uma dependência não-óbvia governa a sequência: **o DNS de** `api.` **precisa estar
 propagado antes de subir o stack**, porque o Caddy valida o certificado com a
 Let's Encrypt no primeiro boot. Subir antes deixa o Caddy em retry e, se você
 insistir, bate no rate limit da Let's Encrypt (5 falhas por hora, por domínio).
@@ -28,6 +30,8 @@ insistir, bate no rate limit da Let's Encrypt (5 falhas por hora, por domínio).
 
 ---
 
+
+
 ## Fase 1 — Domínio
 
 **Se o escritório já tem domínio, pule para a Fase 2** e use o domínio existente
@@ -39,50 +43,60 @@ Domínios `.adv.br` são restritos: o Registro.br valida eletronicamente a
 inscrição na OAB. Advogado com inscrição suspensa, cancelada ou irregular não
 consegue concluir o registro.
 
-| Titular | O que precisa |
-|---|---|
-| Advogado (PF) | CPF + número de inscrição na OAB |
+
+| Titular                     | O que precisa                                       |
+| --------------------------- | --------------------------------------------------- |
+| Advogado (PF)               | CPF + número de inscrição na OAB                    |
 | Sociedade de advogados (PJ) | CNPJ + número de registro da sociedade na seccional |
+
 
 **Registre em nome da sociedade (PJ)**, não de um sócio pessoa física — domínio
 no CPF de um sócio vira problema societário na primeira mudança de quadro.
 
 ### 1.2 Registrar
 
-1. Verifique disponibilidade em <https://registro.br>
+1. Verifique disponibilidade em [https://registro.br](https://registro.br)
 2. Crie a conta com o CNPJ da sociedade
 3. Registre o domínio informando o número da OAB
 4. Aguarde a validação — pode levar de horas a alguns dias se pedirem documento
-   complementar
+  complementar
 
 ⏱️ **Comece por aqui.** É a única etapa que depende de terceiro e não tem prazo
 garantido. Enquanto valida, siga a Fase 2.
 
 ---
 
+
+
 ## Fase 2 — VPS Hostinger
+
+
 
 ### 2.1 Contratar
 
-No <https://hpanel.hostinger.com>:
+No [https://hpanel.hostinger.com](https://hpanel.hostinger.com):
 
-| Campo | Valor |
-|---|---|
-| Plano | **KVM 2** — 2 vCPU, 8 GB RAM, 100 GB NVMe |
-| Localização | **Brasil — São Paulo** |
-| Sistema | **Ubuntu 24.04 LTS** (limpo, sem painel) |
-| Período | **12 ou 24 meses** |
+
+| Campo       | Valor                                     |
+| ----------- | ----------------------------------------- |
+| Plano       | **KVM 2** — 2 vCPU, 8 GB RAM, 100 GB NVMe |
+| Localização | **Brasil — São Paulo**                    |
+| Sistema     | **Ubuntu 24.04 LTS** (limpo, sem painel)  |
+| Período     | **12 ou 24 meses**                        |
+
 
 Três observações:
 
 - **A localização é escolhida na compra e não muda depois.** São Paulo não é
-  preferência de latência: é o que mantém o banco em território nacional (ADR 0004).
+preferência de latência: é o que mantém o banco em território nacional (ADR 0004).
 - **Ubuntu 24.04 LTS**, não 26.04. O 26.04 saiu em abril/2026 e o point release
-  `.1` em 06/08/2026 — maduro demais recente para um sistema jurídico em
-  produção. O 24.04 tem suporte até 2029.
+`.1` em 06/08/2026 — maduro demais recente para um sistema jurídico em
+produção. O 24.04 tem suporte até 2029.
 - **Não use template com painel** (CyberPanel, Plesk). Eles instalam nginx/Apache
-  nas portas 80/443 e conflitam com o Caddy. Ubuntu limpo.
+nas portas 80/443 e conflitam com o Caddy. Ubuntu limpo.
 - **12/24 meses trava o preço promocional.** Renovação mês a mês sobe de 40% a 100%.
+
+
 
 ### 2.2 Chave SSH
 
@@ -100,6 +114,8 @@ Conecte:
 ```bash
 ssh -i ~/.ssh/squad_digital root@<IP-DA-VPS>
 ```
+
+
 
 ### 2.3 Endurecer o servidor
 
@@ -154,6 +170,8 @@ apt update && apt install -y fail2ban
 systemctl enable --now fail2ban
 ```
 
+
+
 ### 2.4 Docker
 
 ```bash
@@ -176,6 +194,8 @@ Reconecte como `deploy` e confirme:
 docker compose version
 ```
 
+
+
 ### 2.5 Clonar o repositório
 
 O repositório é privado, então a VPS precisa de uma **deploy key** própria — não
@@ -183,10 +203,10 @@ reutilize sua chave pessoal.
 
 Como `deploy`, na VPS:
 
-```bash
-ssh-keygen -t ed25519 -C "vps-squad-digital" -f ~/.ssh/id_ed25519 -N ""
-cat ~/.ssh/id_ed25519.pub
-```
+> ```bash
+> ssh-keygen -t ed25519 -C "vps-squad-digital" -f ~/.ssh/id_ed25519 -N ""
+> cat ~/.ssh/id_ed25519.pub
+> ```
 
 No GitHub: repositório → **Settings → Deploy keys → Add deploy key**. Cole a
 pública, **deixe "Allow write access" desmarcado** (a VPS só precisa ler).
@@ -196,9 +216,11 @@ git clone git@github.com:<org>/reis-esteves-squad.git
 cd reis-esteves-squad
 ```
 
+
+
 ### 2.6 Criar o `.env` de produção
 
-> ⚠️ **Não copie o `.env` de desenvolvimento.** Ele tem `changeme_...` em toda
+> ⚠️ **Não copie o** `.env` **de desenvolvimento.** Ele tem `changeme_...` em toda
 > senha. Gere segredos novos.
 
 ```bash
@@ -209,19 +231,21 @@ openssl rand -hex 32
 
 Preencha no `.env`:
 
-| Variável | Como preencher |
-|---|---|
-| `POSTGRES_ADMIN_PASSWORD`, `DB_PASSWORD`, `REDIS_PASSWORD`, `N8N_DB_PASSWORD`, `N8N_BASIC_AUTH_PASSWORD` | um `openssl rand -hex 32` para cada |
-| `BACKEND_SECRET_KEY`, `N8N_ENCRYPTION_KEY` | um `openssl rand -hex 32` para cada |
-| `DATABASE_URL` | `postgresql+asyncpg://squad_app:<DB_PASSWORD>@postgres:5432/squad_digital` |
-| `REDIS_URL` | `redis://:<REDIS_PASSWORD>@redis:6379/0` |
-| `BACKEND_ENV` | `production` |
-| `API_DOMAIN` | `api.<seu-dominio>` |
-| `ACME_EMAIL` | e-mail real de TI (avisos de expiração de certificado) |
-| `BACKEND_WORKERS` | `2` |
-| `GOOGLE_VISION_API_KEY` | a chave restrita à Vision API (ADR 0003) |
-| `BACKEND_CORS_ORIGINS` | `https://app.<seu-dominio>` |
-| `N8N_PROTOCOL` | `https` |
+
+| Variável                                                                                                 | Como preencher                                                             |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `POSTGRES_ADMIN_PASSWORD`, `DB_PASSWORD`, `REDIS_PASSWORD`, `N8N_DB_PASSWORD`, `N8N_BASIC_AUTH_PASSWORD` | um `openssl rand -hex 32` para cada                                        |
+| `BACKEND_SECRET_KEY`, `N8N_ENCRYPTION_KEY`                                                               | um `openssl rand -hex 32` para cada                                        |
+| `DATABASE_URL`                                                                                           | `postgresql+asyncpg://squad_app:<DB_PASSWORD>@postgres:5432/squad_digital` |
+| `REDIS_URL`                                                                                              | `redis://:<REDIS_PASSWORD>@redis:6379/0`                                   |
+| `BACKEND_ENV`                                                                                            | `production`                                                               |
+| `API_DOMAIN`                                                                                             | `api.<seu-dominio>`                                                        |
+| `ACME_EMAIL`                                                                                             | e-mail real de TI (avisos de expiração de certificado)                     |
+| `BACKEND_WORKERS`                                                                                        | `2`                                                                        |
+| `GOOGLE_VISION_API_KEY`                                                                                  | a chave restrita à Vision API (ADR 0003)                                   |
+| `BACKEND_CORS_ORIGINS`                                                                                   | `https://app.<seu-dominio>`                                                |
+| `N8N_PROTOCOL`                                                                                           | `https`                                                                    |
+
 
 ```bash
 chmod 600 .env
@@ -232,14 +256,18 @@ chmod 600 .env
 
 ---
 
+
+
 ## Fase 3 — DNS de `api.` (antes de subir!)
 
 No painel de DNS do domínio (Registro.br → **Configurar endereçamento → Modo
 avançado**, ou no provedor de DNS que você usa):
 
-| Tipo | Nome | Valor | TTL |
-|---|---|---|---|
-| A | `api` | IPv4 da VPS | 300 |
+
+| Tipo | Nome  | Valor       | TTL |
+| ---- | ----- | ----------- | --- |
+| A    | `api` | IPv4 da VPS | 300 |
+
 
 Deixe o **TTL em 300** durante o cutover — erro se corrige em 5 minutos em vez
 de uma hora. Suba para 3600 depois que estabilizar.
@@ -247,9 +275,11 @@ de uma hora. Suba para 3600 depois que estabilizar.
 **Registro CAA** (opcional, recomendado) — impede que qualquer CA que não a
 Let's Encrypt emita certificado para o domínio:
 
-| Tipo | Nome | Valor |
-|---|---|---|
-| CAA | `@` | `0 issue "letsencrypt.org"` |
+
+| Tipo | Nome | Valor                       |
+| ---- | ---- | --------------------------- |
+| CAA  | `@`  | `0 issue "letsencrypt.org"` |
+
 
 Nem todo painel suporta CAA; se o Registro.br não oferecer o tipo, siga sem ele.
 
@@ -267,6 +297,8 @@ dig +short api.<seu-dominio>
 Só avance quando isso devolver o IP da VPS.
 
 ---
+
+
 
 ## Fase 4 — Backend na VPS
 
@@ -316,19 +348,23 @@ sobrou um `ports:` no compose de produção — corrija antes de seguir.
 
 ---
 
+
+
 ## Fase 5 — Frontend na Netlify
 
-1. <https://app.netlify.com> → **Add new site → Import an existing project**
+1. [https://app.netlify.com](https://app.netlify.com) → **Add new site → Import an existing project**
 2. Conecte o GitHub e escolha o repositório
 3. Configure:
 
-| Campo | Valor |
-|---|---|
-| **Base directory** | `frontend` |
-| Build command | `npm run build` *(já vem do `netlify.toml`)* |
-| Publish directory | `.next` *(idem)* |
 
-4. **Environment variables** → adicione:
+| Campo              | Valor                                          |
+| ------------------ | ---------------------------------------------- |
+| **Base directory** | `frontend`                                     |
+| Build command      | `npm run build` *(já vem do* `netlify.toml`*)* |
+| Publish directory  | `.next` *(idem)*                               |
+
+
+1. **Environment variables** → adicione:
 
 ```
 NEXT_PUBLIC_API_URL = https://api.<seu-dominio>/api/v1
@@ -339,22 +375,28 @@ NEXT_PUBLIC_API_URL = https://api.<seu-dominio>/api/v1
 > para `localhost`. E se mudar depois, precisa **redeployar** — alterar a
 > variável sozinha não muda o bundle já publicado.
 
-5. **Deploy site**
+1. **Deploy site**
 
 ---
+
+
 
 ## Fase 6 — DNS de `app.`
 
 No painel do domínio:
 
-| Tipo | Nome | Valor | TTL |
-|---|---|---|---|
+
+| Tipo  | Nome  | Valor                | TTL |
+| ----- | ----- | -------------------- | --- |
 | CNAME | `app` | `<site>.netlify.app` | 300 |
+
 
 Na Netlify: **Domain management → Add a domain** → `app.<seu-dominio>`. Ela
 detecta o CNAME e emite o certificado automaticamente.
 
 ---
+
+
 
 ## Fase 7 — Fechar o CORS
 
@@ -375,7 +417,11 @@ a tela carregar e nenhum dado aparecer, com erro de CORS no console.
 
 ---
 
+
+
 ## Fase 8 — Verificação e operação
+
+
 
 ### 8.1 Checklist de fumaça
 
@@ -387,6 +433,8 @@ a tela carregar e nenhum dado aparecer, com erro de CORS no console.
 - [ ] Download do original funciona
 - [ ] `nc -zv <IP> 5432` falha
 - [ ] `https://api.<dominio>/health` responde 200 com certificado válido
+
+
 
 ### 8.2 Backup — obrigatório antes de dados reais
 
@@ -407,6 +455,8 @@ Agende (`crontab -e` como `deploy`), 3h da manhã:
 > - [ ] **Testar a restauração** ao menos uma vez — backup não testado não é backup
 > - [ ] Definir retenção, considerando os prazos de guarda documental do escritório
 
+
+
 ### 8.3 Acessar o n8n
 
 Não tem subdomínio, por decisão (CLAUDE.md §15). Da sua máquina:
@@ -422,6 +472,8 @@ Com o túnel aberto, acesse `http://localhost:5678`.
 Passados alguns dias sem incidente, suba o TTL de `api` e `app` de 300 para 3600.
 
 ---
+
+
 
 ## Deploys seguintes
 
@@ -446,14 +498,20 @@ anterior é compatível com o schema atual antes de reverter.
 
 ---
 
+
+
 ## Problemas comuns
 
-| Sintoma | Causa provável |
-|---|---|
-| Caddy em retry, sem certificado | DNS de `api.` não propagou antes do `prod-up` |
-| Frontend carrega, nenhum dado aparece | `BACKEND_CORS_ORIGINS` não lista `https://app.<dominio>` |
-| Frontend chama `localhost` | `NEXT_PUBLIC_API_URL` faltando na Netlify, ou mudou sem redeploy |
-| Backend não sobe, erro de conexão | Senha em `DATABASE_URL`/`REDIS_URL` diverge da senha gerada |
-| 413 no upload de evidência | `BACKEND_MAX_UPLOAD_MB` não chegou ao Caddy (`request_body max_size`) |
-| OCR falha em toda imagem | `GOOGLE_VISION_API_KEY` ausente ou sem a Vision API habilitada |
-| Netlify nunca builda | `build.ignore` — confira o pathspec ancorado `':/frontend'` |
+
+| Sintoma                               | Causa provável                                                        |
+| ------------------------------------- | --------------------------------------------------------------------- |
+| Caddy em retry, sem certificado       | DNS de `api.` não propagou antes do `prod-up`                         |
+| Frontend carrega, nenhum dado aparece | `BACKEND_CORS_ORIGINS` não lista `https://app.<dominio>`              |
+| Frontend chama `localhost`            | `NEXT_PUBLIC_API_URL` faltando na Netlify, ou mudou sem redeploy      |
+| Backend não sobe, erro de conexão     | Senha em `DATABASE_URL`/`REDIS_URL` diverge da senha gerada           |
+| 413 no upload de evidência            | `BACKEND_MAX_UPLOAD_MB` não chegou ao Caddy (`request_body max_size`) |
+| OCR falha em toda imagem              | `GOOGLE_VISION_API_KEY` ausente ou sem a Vision API habilitada        |
+| Netlify falha ao parsear o config     | `ignore` deve ser string em `[build]`, não tabela `[build.ignore]`    |
+| Netlify nunca builda                  | `build.ignore` — confira o pathspec ancorado `':/frontend'`           |
+
+
