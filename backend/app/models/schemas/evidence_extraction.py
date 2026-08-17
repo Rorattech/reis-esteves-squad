@@ -45,6 +45,9 @@ class EvidenceExtractionResponse(BaseModel):
     outcome: ExtractionOutcome
     extracted_text: str | None
     confidence: float | None
+    # Leitura automática insuficiente: a interface é obrigada a destacar o
+    # aviso e a conferência humana contra o original (roadmap 3.5).
+    low_confidence: bool
     limitations: str | None
     tool_name: str
     tool_version: str

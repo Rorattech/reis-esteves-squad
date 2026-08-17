@@ -1,0 +1,49 @@
+# Reverse proxy e TLS do Squad Digital em produção.
+# Ver docs/adr/0004-deploy-hostinger-netlify.md.
+#
+# Só a API mora aqui. O frontend é servido pela Netlify (app.<dominio> é um
+# CNAME para a Netlify, não passa por esta VPS), e o n8n não tem entrada
+# nenhuma: é infraestrutura interna, acessada só por túnel SSH
+# (CLAUDE.md, seção 15).
+
+{
+	email {$ACME_EMAIL}
+	# Sem servidor de admin: a API de administração do Caddy escuta em
+	# localhost:2019 por padrão e não tem uso aqui.
+	admin off
+}
+
+{$API_DOMAIN} {
+	# Uploads de evidência: BACKEND_MAX_UPLOAD_MB é 50 por padrão, e o
+	# encapsulamento multipart acrescenta alguns por cento. Sem esta folga, o
+	# proxy corta antes do backend e o advogado recebe um 413 sem explicação
+	# num arquivo que o sistema deveria aceitar.
+	request_body {
+		max_size {$BACKEND_MAX_UPLOAD_MB}MB
+	}
+
+	# Downloads de original e OCR de PDF podem passar do default de 30s.
+	reverse_proxy backend:8000 {
+		transport http {
+			read_timeout 120s
+			write_timeout 120s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Não anuncie a stack.
+		-Server
+	}
+
+	# Nunca logar corpo de requisição nem query string: as rotas carregam
+	# conteúdo de evidência e dados de cliente (CLAUDE.md, seção 12).
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}

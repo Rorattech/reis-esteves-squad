@@ -15,7 +15,9 @@ interface (Central de evidências) chega nas 3.4/3.5.
 | `backend/app/services/evidence_service.py` | Validação, dedup por hash, inventário e auditoria |
 | `backend/app/api/v1/evidence.py` | Rotas autenticadas sob `/api/v1/cases/{case_id}/evidence` |
 | `backend/alembic/versions/f39dd1e27be8_*.py` | Migration `evidence_files` + enum + RLS |
+| `backend/app/core/vision.py` | Cliente do Google Cloud Vision — OCR gerenciado de imagem e PDF escaneado |
 | `docs/adr/0001-evidence-storage-local-filesystem.md` | Decisão de armazenamento (filesystem local, volume Docker) |
+| `docs/adr/0003-ocr-google-cloud-vision.md` | Decisão de OCR gerenciado + pendências de LGPD (transferência internacional) |
 
 ## Fluxo de upload
 
@@ -51,9 +53,19 @@ Extratores (`app/core/extraction.py`), roteados pelo MIME validado no upload:
 | Tipo | Método (`kind`) | Confiança |
 |---|---|---|
 | `text/plain` | `plain_text` — decodificação direta | 1.0 |
-| PDF com camada de texto | `pdf_text` — pypdf | 0.95 |
-| PDF escaneado | `pdf_ocr` — pdf2image + tesseract (por+eng, máx. 10 págs) | média das palavras |
-| Imagens | `image_ocr` — tesseract (por+eng) | média das palavras |
+| PDF com camada de texto | `pdf_text` — pypdf (local, nada sai do servidor) | 0.95 |
+| PDF escaneado | `pdf_vision_ocr` — Google Cloud Vision (máx. 10 págs) | média das páginas |
+| Imagens | `image_vision_ocr` — Google Cloud Vision | média das páginas |
+
+**O OCR é gerenciado, não local** (ADR 0003): não há tesseract nem poppler no
+container. A Vision API aceita PDF inline em base64, então nada é rasterizado
+localmente. Como `files:asyncBatchAnnotate` não aceita API key, usamos os
+endpoints síncronos — daí o teto de 5 páginas por requisição, e PDFs maiores
+serem anotados em blocos (`app/core/vision.py`).
+
+⚠️ Isso implica **transferência internacional de dados pessoais**: a Vision API
+não tem região no Brasil. As pendências de LGPD a resolver antes de produção com
+dados reais estão listadas no ADR 0003.
 
 Cada execução é uma linha **imutável** em `evidence_extractions` (ferramenta,
 versão, hash de entrada/saída, duração, confiança, `limitations` obrigatório) —
@@ -61,6 +73,19 @@ reprocessos criam linhas novas; falhas terminam em `failed` com `error_message`
 técnico, sem tocar o original. Todo resultado de OCR carrega aviso explícito de
 que é conteúdo derivado sujeito a erro. `GET .../evidence/{id}/extractions`
 lista as execuções com o texto derivado.
+
+### Sinal de insuficiência (`low_confidence`)
+
+Confiança abaixo de `EXTRACTION_LOW_CONFIDENCE_THRESHOLD` (padrão 0.75) grava
+`low_confidence = true` na linha da extração, e o detalhe da evidência destaca
+"Conferência humana obrigatória". O texto derivado **não é descartado** — baixa
+confiança sinaliza, não invalida.
+
+O sistema **não reprocessa nem "melhora" o texto com IA**: encadear um modelo
+multimodal produziria texto mais plausível sem garantia de ser mais fiel ao
+original. A decisão volta para o advogado (CLAUDE.md, seção 2). O veredito é
+persistido, não derivado na leitura, para que mudar o patamar depois não
+reescreva o julgamento de execuções já conferidas.
 
 ## Análise de evidências — nós LangGraph (Fase 3.3)
 

@@ -87,8 +87,14 @@ export function ExtractionPanel({
               {extraction.tool_version} · método {extraction.kind}
             </p>
             {extraction.outcome === "succeeded" ? (
-              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                Extração concluída
+              <span
+                className={
+                  extraction.low_confidence
+                    ? "inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                    : "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700"
+                }
+              >
+                {extraction.low_confidence ? "Leitura insuficiente" : "Extração concluída"}
                 {extraction.confidence !== null &&
                   ` — confiança ${Math.round(extraction.confidence * 100)}%`}
               </span>
@@ -98,6 +104,18 @@ export function ExtractionPanel({
               </span>
             )}
           </div>
+
+          {extraction.outcome === "succeeded" && extraction.low_confidence && (
+            <p
+              role="status"
+              className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+            >
+              <span className="font-semibold">Conferência humana obrigatória.</span> A leitura
+              automática ficou abaixo do patamar de confiança aceitável. Compare o texto abaixo
+              com o arquivo original linha a linha antes de usar em qualquer peça — e aponte o
+              erro de extração se algo não bater.
+            </p>
+          )}
 
           {extraction.limitations && (
             <p className="mt-2 text-xs text-slate-500">{extraction.limitations}</p>

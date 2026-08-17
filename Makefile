@@ -5,9 +5,15 @@ SHELL := /bin/bash
 # partir de infra/ referenciando ../.env — não mova esta convenção sem testar.
 COMPOSE := cd infra && docker compose --env-file ../.env
 
+# Stack de produção (VPS) — arquivo próprio, não um override do de dev: portas
+# publicadas e bind mounts do dev precisam SUMIR, e o merge do Compose sabe
+# adicionar, não remover. Ver docs/adr/0004-deploy-hostinger-netlify.md.
+COMPOSE_PROD := cd infra && docker compose --env-file ../.env -f docker-compose.prod.yml
+
 .PHONY: help env up down down-v build rebuild restart ps logs \
         sh-backend sh-frontend sh-postgres sh-redis sh-n8n \
         psql redis-cli migrations test lint fmt clean \
+        prod-up prod-down prod-ps prod-logs prod-migrations prod-backup \
         graph graph-update graph-watch graph-watch-stop graph-report
 
 help: ## Lista os comandos disponíveis
@@ -78,6 +84,33 @@ fmt: ## Formata o código do backend (black)
 	$(COMPOSE) exec backend black .
 
 clean: down-v ## Alias de down-v — para os containers e apaga os volumes
+
+# --- Produção (rodar NA VPS) — ver docs/adr/0004-deploy-hostinger-netlify.md ---
+# O frontend não está aqui: é buildado e servido pela Netlify.
+
+prod-up: ## [VPS] Builda e sobe o stack de produção (backend, banco, redis, n8n, caddy)
+	$(COMPOSE_PROD) up -d --build
+
+prod-down: ## [VPS] Para o stack de produção (mantém os volumes)
+	$(COMPOSE_PROD) down
+
+prod-ps: ## [VPS] Status dos containers de produção
+	$(COMPOSE_PROD) ps
+
+prod-logs: ## [VPS] Segue os logs do stack de produção
+	$(COMPOSE_PROD) logs -f --tail=100
+
+prod-migrations: ## [VPS] Aplica as migrations do Alembic em produção
+	$(COMPOSE_PROD) exec backend alembic upgrade head
+
+prod-backup: ## [VPS] Dump do Postgres + tar das evidências em ./backups (rode os dois JUNTOS)
+	@mkdir -p backups
+	@STAMP=$$(date +%Y%m%d-%H%M%S); \
+	$(COMPOSE_PROD) exec -T postgres sh -c 'pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
+	  | gzip > "backups/postgres-$$STAMP.sql.gz"; \
+	cd $(CURDIR) && $(COMPOSE_PROD) run --rm -T -v "$(CURDIR)/backups:/backup" \
+	  --entrypoint sh backend -c "tar czf /backup/evidence-$$STAMP.tar.gz -C /app/storage/evidence ." ; \
+	echo "backup gerado: backups/postgres-$$STAMP.sql.gz + backups/evidence-$$STAMP.tar.gz"
 
 # --- Graphify (grafo de conhecimento do projeto) — ver docs/graphify.md ---------
 # A chave da API vive em ~/.graphify/env (chmod 600), nunca no repositório.

@@ -1,0 +1,159 @@
+name: squad-digital
+
+# Stack de PRODUÇÃO — VPS Hostinger KVM 2 (2 vCPU, 8 GB, 100 GB NVMe, São Paulo).
+# Decisão e justificativa em docs/adr/0004-deploy-hostinger-netlify.md.
+#
+# Uso (a partir da raiz do repo):
+#   docker compose --env-file .env -f infra/docker-compose.prod.yml up -d --build
+#   docker compose --env-file .env -f infra/docker-compose.prod.yml exec backend alembic upgrade head
+# ou, mais curto: `make prod-up` e `make prod-migrations`.
+#
+# Três diferenças deliberadas em relação a infra/docker-compose.yml (dev):
+#
+# 1. NENHUM `ports:` em postgres, redis e n8n. Em dev eles publicam 5432/6379/5678
+#    no host por conveniência; numa VPS com IP público isso é bind em 0.0.0.0 —
+#    banco e cache expostos à internet. Aqui os serviços só se enxergam pela rede
+#    interna `squad-net`. O único container com porta publicada é o Caddy.
+# 2. Sem bind mount de código. O código é assado na imagem (target: prod); montar
+#    o fonte em produção significa que editar um arquivo no servidor muda o que
+#    roda, sem passar por build nem git.
+# 3. Sem serviço `frontend`. O Next.js é buildado e servido pela Netlify — ver o
+#    ADR 0004 e frontend/netlify.toml.
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.5-pg16-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      N8N_DB_NAME: ${N8N_DB_NAME}
+      N8N_DB_USER: ${N8N_DB_USER}
+      N8N_DB_PASSWORD: ${N8N_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - squad-net
+
+  redis:
+    image: redis:7.4.10-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - squad-net
+
+  # Infraestrutura interna invisível (CLAUDE.md, seção 15) — sem porta publicada
+  # e sem entrada no Caddy. Para abrir a UI de administração, túnel SSH:
+  #   ssh -L 5678:localhost:5678 usuario@vps   ->   http://localhost:5678
+  n8n:
+    image: n8nio/n8n:2.31.6
+    restart: unless-stopped
+    environment:
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: ${N8N_PORT}
+      N8N_PROTOCOL: ${N8N_PROTOCOL}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_BASIC_AUTH_ACTIVE: ${N8N_BASIC_AUTH_ACTIVE}
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
+      DB_POSTGRESDB_USER: ${N8N_DB_USER}
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - squad-net
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: prod
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      BACKEND_ENV: production
+      BACKEND_WORKERS: ${BACKEND_WORKERS:-2}
+    expose:
+      - "8000"
+    volumes:
+      # Único volume de dados da aplicação: os originais de evidência. É o que
+      # precisa entrar na rotina de backup junto com o dump do Postgres — um
+      # sem o outro deixa o inventário inconsistente (ADR 0001 e 0004).
+      - evidence_storage:/app/storage/evidence
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status == 200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - squad-net
+
+  # Único ponto de entrada público. TLS automático via Let's Encrypt — o Caddy
+  # emite e renova sozinho, desde que 80 e 443 estejam abertos e o DNS de
+  # api.<dominio> já aponte para esta VPS ANTES do primeiro `up`.
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      BACKEND_MAX_UPLOAD_MB: ${BACKEND_MAX_UPLOAD_MB}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persistem os certificados: sem isso, cada recreate do container pede
+      # certificado novo e você bate no rate limit da Let's Encrypt.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    networks:
+      - squad-net
+
+networks:
+  squad-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:
+  evidence_storage:
+  caddy_data:
+  caddy_config:

@@ -16,7 +16,7 @@ substituir o original").
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -56,15 +56,24 @@ class EvidenceExtraction(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         nullable=False,
         index=True,
     )
-    # Método efetivamente usado: "plain_text" | "pdf_text" | "image_ocr" |
-    # "pdf_ocr" — String, não enum de banco: novos extratores não devem exigir
-    # migration.
+    # Método efetivamente usado: "plain_text" | "pdf_text" | "image_vision_ocr"
+    # | "pdf_vision_ocr" — String, não enum de banco: novos extratores não devem
+    # exigir migration. Linhas antigas ainda trazem "image_ocr"/"pdf_ocr", do
+    # tesseract local (ver docs/adr/0003-ocr-google-cloud-vision.md).
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     outcome: Mapped[ExtractionOutcome] = mapped_column(
         db_enum(ExtractionOutcome, "extraction_outcome"), nullable=False
     )
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Insuficiência da leitura automática, decidida no momento da extração
+    # contra `extraction_low_confidence_threshold`. Gravado na linha imutável
+    # em vez de derivado na leitura: mudar o patamar depois não pode reescrever
+    # o veredito de execuções passadas. Sinaliza conferência humana — nunca
+    # dispara reprocessamento nem "melhoria" por IA (CLAUDE.md, seção 2).
+    low_confidence: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     limitations: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
     tool_version: Mapped[str] = mapped_column(String(50), nullable=False)

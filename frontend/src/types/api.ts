@@ -391,6 +391,12 @@ export interface EvidenceExtraction {
   outcome: ExtractionOutcome;
   extracted_text: string | null;
   confidence: number | null;
+  /**
+   * Leitura automática insuficiente (confiança abaixo do patamar do backend).
+   * A interface é obrigada a destacar isso e pedir conferência humana — o
+   * sistema não reprocessa nem "melhora" o texto por conta própria.
+   */
+  low_confidence: boolean;
   limitations: string | null;
   tool_name: string;
   tool_version: string;

@@ -42,6 +42,23 @@ class Settings(BaseSettings):
     # e specialist — Fase 3.3).
     evidence_llm_model: str = "claude-sonnet-5"
 
+    # OCR gerenciado das evidências (Fase 3.2) — decisão e tratamento de
+    # transferência internacional em docs/adr/0003-ocr-google-cloud-vision.md.
+    google_vision_api_key: str | None = None
+    google_vision_endpoint: str = "https://vision.googleapis.com/v1"
+    google_vision_timeout_seconds: float = 30.0
+    # files:annotate (síncrono, o único que aceita API key) anota no máximo 5
+    # páginas por requisição — ver app/core/vision.py.
+    google_vision_pages_per_request: int = 5
+    # Teto defensivo de páginas submetidas a OCR por PDF escaneado: evita que
+    # um upload de 50MB vire dezenas de chamadas cobradas.
+    extraction_max_ocr_pages: int = 10
+    # Abaixo deste patamar de confiança, o texto derivado é gravado com
+    # `low_confidence=True` e entra na fila de conferência humana. O sistema
+    # NUNCA reprocessa por conta própria nem "melhora" o texto com IA — apenas
+    # sinaliza que a leitura automática é insuficiente (CLAUDE.md, seção 2).
+    extraction_low_confidence_threshold: float = 0.75
+
     database_url: str
     redis_url: str
 

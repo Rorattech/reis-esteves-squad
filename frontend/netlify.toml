@@ -1,0 +1,39 @@
+# Build e hospedagem do frontend na Netlify.
+# Decisão em docs/adr/0004-deploy-hostinger-netlify.md.
+#
+# Monorepo: no painel da Netlify, defina "Base directory" = frontend
+# (este arquivo mora dentro dele). O backend continua no mesmo repositório e é
+# deployado na VPS — os dois compartilham git e nada mais.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "24"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Não gaste build minute quando o commit não tocou o frontend. A Netlify roda
+# este comando na raiz do repo: exit 0 = pula o build, exit 1 = builda.
+# `git diff --quiet` já devolve exatamente esses códigos.
+[build.ignore]
+  command = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- frontend/"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Cabeçalhos de segurança. A API tem os seus (ver infra/Caddyfile) — estes valem
+# para os artefatos servidos pela Netlify.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+# NEXT_PUBLIC_API_URL NÃO fica aqui: é embutida no bundle em tempo de build e
+# aponta para a API de produção, então mora nas variáveis de ambiente do site
+# na Netlify (Site configuration > Environment variables). Deixá-la em branco
+# faz o deploy subir verde e quebrar em runtime apontando para localhost.
+#   NEXT_PUBLIC_API_URL=https://api.<seu-dominio>/api/v1

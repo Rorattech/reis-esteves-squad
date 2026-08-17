@@ -94,6 +94,9 @@ services:
       # são importados por backend/app/core/audit.py).
       context: ..
       dockerfile: backend/Dockerfile
+      # Obrigatório: sem target, o build pegaria o último estágio do Dockerfile
+      # (prod) e o hot-reload sumiria do ambiente de desenvolvimento.
+      target: dev
     restart: unless-stopped
     env_file:
       - ../.env

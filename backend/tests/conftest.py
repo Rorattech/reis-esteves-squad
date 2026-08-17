@@ -33,6 +33,7 @@ def _load_repo_root_env() -> None:
 
 _load_repo_root_env()
 
+import pytest  # noqa: E402 — precisa vir depois de _load_repo_root_env()
 import pytest_asyncio  # noqa: E402 — precisa vir depois de _load_repo_root_env()
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import select, text  # noqa: E402
@@ -301,3 +302,25 @@ async def login(api_client: AsyncClient, tenant: TenantFixture) -> dict[str, str
 async def auth_headers(api_client: AsyncClient, tenant: TenantFixture) -> dict[str, str]:
     """Cabeçalho Authorization com um access token válido para `tenant`."""
     return await login(api_client, tenant)
+
+
+@pytest.fixture(autouse=True)
+def _offline_vision(monkeypatch) -> None:
+    """Impede que qualquer teste chame a Google Cloud Vision de verdade.
+
+    O pipeline de extração dispara em todo upload, e o upload padrão da suíte é
+    um PNG — sem este guard, rodar os testes gastaria cota, exigiria uma API key
+    configurada e deixaria a suíte dependente de rede. Testes que se importam
+    com o conteúdo do OCR sobrescrevem isto (ver `_stub_vision` em
+    tests/test_evidence_extraction.py).
+    """
+    from app.core import extraction, vision
+
+    async def _annotate_image(content: bytes) -> vision.VisionAnnotation:
+        return vision.VisionAnnotation(text="", confidence=0.9, pages_annotated=1)
+
+    async def _annotate_pdf(content: bytes, *, max_pages: int) -> vision.VisionAnnotation:
+        return vision.VisionAnnotation(text="", confidence=0.9, pages_annotated=1)
+
+    monkeypatch.setattr(extraction, "annotate_image", _annotate_image)
+    monkeypatch.setattr(extraction, "annotate_pdf", _annotate_pdf)

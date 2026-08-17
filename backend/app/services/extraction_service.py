@@ -107,7 +107,7 @@ async def process_evidence(
 
         try:
             content = storage.read_path(evidence.storage_key).read_bytes()
-            result = extract_content(evidence.mime_type, content)
+            result = await extract_content(evidence.mime_type, content)
         except Exception as exc:
             # Mensagem técnica curta — nunca conteúdo do documento nos logs.
             error_message = str(exc) if isinstance(exc, ExtractionError) else type(exc).__name__
@@ -159,6 +159,7 @@ async def process_evidence(
             outcome=ExtractionOutcome.SUCCEEDED,
             extracted_text=result.text,
             confidence=result.confidence,
+            low_confidence=result.low_confidence,
             limitations=result.limitations,
             tool_name=result.tool_name,
             tool_version=result.tool_version,
@@ -182,6 +183,7 @@ async def process_evidence(
                 "extraction_id": str(extraction.id),
                 "kind": result.kind,
                 "confidence": result.confidence,
+                "low_confidence": result.low_confidence,
                 "output_sha256": extraction.output_sha256,
                 "text_chars": len(result.text),
             },
@@ -200,6 +202,7 @@ async def process_evidence(
             evidence_id=str(evidence.id),
             kind=result.kind,
             confidence=result.confidence,
+            low_confidence=result.low_confidence,
         )
 
 

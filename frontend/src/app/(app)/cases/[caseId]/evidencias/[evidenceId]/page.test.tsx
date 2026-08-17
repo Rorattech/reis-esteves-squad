@@ -91,6 +91,7 @@ function makeExtraction(overrides: Partial<EvidenceExtraction> = {}): EvidenceEx
     outcome: "succeeded",
     extracted_text: "cliente: fui vitima de golpe no marketplace",
     confidence: 1,
+    low_confidence: false,
     limitations: "Decodificação direta de texto puro.",
     tool_name: "python-utf8",
     tool_version: "3",
@@ -155,6 +156,32 @@ describe("EvidenceDetailPage — visualização", () => {
     await waitFor(() =>
       expect(screen.getByText("Nenhuma extração registrada ainda")).toBeInTheDocument(),
     );
+  });
+
+  it("destaca conferência humana obrigatória quando o OCR ficou insuficiente", async () => {
+    listEvidenceExtractionsMock.mockResolvedValue([
+      makeExtraction({
+        kind: "image_vision_ocr",
+        tool_name: "google-cloud-vision",
+        extracted_text: "P1X env1ado R$ 2.5OO,OO",
+        confidence: 0.41,
+        low_confidence: true,
+        limitations: "Texto obtido por OCR — conteúdo derivado, sujeito a erros de leitura.",
+      }),
+    ]);
+
+    render(<EvidenceDetailPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Conferência humana obrigatória.")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/Leitura insuficiente/)).toBeInTheDocument();
+    // O texto derivado continua visível: baixa confiança sinaliza, não descarta.
+    expect(screen.getByText("P1X env1ado R$ 2.5OO,OO")).toBeInTheDocument();
+    // E a revisão humana continua disponível para apontar o erro.
+    expect(
+      screen.getByRole("button", { name: /Apontar erro de extração/ }),
+    ).toBeInTheDocument();
   });
 
   it("mostra a falha de processamento sem perder o original", async () => {
