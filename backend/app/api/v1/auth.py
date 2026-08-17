@@ -42,7 +42,16 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+# include_in_schema=False: rota operacional, oculta da documentação pública
+# (OpenAPI/Swagger). O endpoint continua ativo e funcional — o cadastro de novos
+# tenants é feito apenas pelo suporte interno enquanto o produto está em
+# desenvolvimento. Ver a descrição da API em app/main.py.
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 async def register(
     payload: RegisterRequest,
     session: AsyncSession = Depends(get_auth_bootstrap_session),
@@ -129,7 +138,9 @@ async def login(
     )
 
 
-@router.post("/refresh", response_model=TokenResponse)
+# include_in_schema=False: idem /register — rota ativa, apenas omitida do
+# schema OpenAPI. O refresh é consumido pelo frontend de forma transparente.
+@router.post("/refresh", response_model=TokenResponse, include_in_schema=False)
 async def refresh(
     payload: RefreshRequest,
     session: AsyncSession = Depends(get_auth_bootstrap_session),
