@@ -13,11 +13,14 @@
   NODE_VERSION = "24"
   NEXT_TELEMETRY_DISABLED = "1"
 
-# Não gaste build minute quando o commit não tocou o frontend. A Netlify roda
-# este comando na raiz do repo: exit 0 = pula o build, exit 1 = builda.
-# `git diff --quiet` já devolve exatamente esses códigos.
+# Não gaste build minute quando o commit não tocou o frontend.
+# exit 0 = pula o build, exit 1 = builda — `git diff --quiet` já devolve isso.
+# O pathspec ':/frontend' é ancorado na RAIZ do repositório: a Netlify roda este
+# comando a partir do base directory (frontend/), onde um 'frontend/' relativo
+# apontaria para frontend/frontend/ e nunca casaria com nada — ou seja, o build
+# seria pulado sempre, inclusive quando o frontend mudou.
 [build.ignore]
-  command = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- frontend/"
+  command = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ':/frontend'"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

@@ -105,12 +105,19 @@ prod-migrations: ## [VPS] Aplica as migrations do Alembic em produção
 
 prod-backup: ## [VPS] Dump do Postgres + tar das evidências em ./backups (rode os dois JUNTOS)
 	@mkdir -p backups
-	@STAMP=$$(date +%Y%m%d-%H%M%S); \
+	@set -euo pipefail; \
+	STAMP=$$(date +%Y%m%d-%H%M%S); \
 	$(COMPOSE_PROD) exec -T postgres sh -c 'pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
-	  | gzip > "backups/postgres-$$STAMP.sql.gz"; \
-	cd $(CURDIR) && $(COMPOSE_PROD) run --rm -T -v "$(CURDIR)/backups:/backup" \
-	  --entrypoint sh backend -c "tar czf /backup/evidence-$$STAMP.tar.gz -C /app/storage/evidence ." ; \
+	  | gzip > "$(CURDIR)/backups/postgres-$$STAMP.sql.gz"; \
+	$(COMPOSE_PROD) exec -T backend tar czf - -C /app/storage/evidence . \
+	  > "$(CURDIR)/backups/evidence-$$STAMP.tar.gz"; \
 	echo "backup gerado: backups/postgres-$$STAMP.sql.gz + backups/evidence-$$STAMP.tar.gz"
+# Os dois artefatos saem em STREAM para stdout e o redirecionamento cria o
+# arquivo no host: quem escreve é o shell (usuário deploy), não o container.
+# Montar ./backups dentro do container não funcionaria — o backend roda como
+# appuser (uid 10001) e não tem permissão de escrita num diretório do host.
+# `set -e` + `pipefail` garantem que uma falha no pg_dump não deixe para trás um
+# .gz truncado passando por backup válido.
 
 # --- Graphify (grafo de conhecimento do projeto) — ver docs/graphify.md ---------
 # A chave da API vive em ~/.graphify/env (chmod 600), nunca no repositório.
