@@ -21,7 +21,14 @@ from app.middleware.tenant import TenantMiddleware
 configure_logging()
 logger = structlog.get_logger()
 
-app = FastAPI(title="Squad Digital API", version="0.1.0")
+API_DESCRIPTION = """
+> **Aviso de Cadastro e Suporte:**
+> O registro de novos tenants e usuários é realizado exclusivamente pelo suporte
+> interno diretamente no banco de dados, visto que a aplicação ainda está em fase
+> de desenvolvimento.
+"""
+
+app = FastAPI(title="Squad Digital API", version="0.1.0", description=API_DESCRIPTION)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
